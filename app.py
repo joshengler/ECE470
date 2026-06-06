@@ -95,6 +95,7 @@ class PygameApp:
         self.target_num_nodes = DEFAULT_NUM_DEVICES
         self.target_num_aps = DEFAULT_NUM_APS
         self.show_links = True
+        self.throttle_speed = True
         
         # Textbox Input variables (for typing in numbers directly)
         self.active_input_key = None
@@ -117,7 +118,7 @@ class PygameApp:
         self.btn_rotate_nodes = pygame.Rect(820, 167, 170, 26)    # Regenerates nodes with new seed
         self.btn_apply_tgt = pygame.Rect(1010, 167, 170, 26)       # Applies target size/ap configs
         
-        # 10 Parameter Adjusters
+        # 11 Parameter Adjusters
         self.adjusters = [
             {"name": "AP Radius", "key": "ap_radius", "fmt": lambda x: f"{x:.1f}", "step": 1.0, "type": "slider"},
             {"name": "Mutation Rate", "key": "mutation_rate", "fmt": lambda x: f"{x:.3f}", "step": 0.01, "type": "slider"},
@@ -128,17 +129,17 @@ class PygameApp:
             {"name": "Grid Size (Tgt)", "key": "grid_size", "fmt": lambda x: f"{x:d}", "step": 50, "type": "slider"},
             {"name": "Nodes (Tgt)", "key": "nodes", "fmt": lambda x: f"{x:d}", "step": 10, "type": "slider"},
             {"name": "AP Count (Tgt)", "key": "aps", "fmt": lambda x: f"{x:d}", "step": 1, "type": "slider"},
-            {"name": "Show Links", "key": "show_links", "fmt": lambda x: "ON" if x else "OFF", "step": 0, "type": "toggle"}
+            {"name": "Show Links", "key": "show_links", "fmt": lambda x: "ON" if x else "OFF", "step": 0, "type": "toggle"},
+            {"name": "Throttle Speed", "key": "throttle_speed", "fmt": lambda x: "ON" if x else "OFF", "step": 0, "type": "toggle"}
         ]
         
         # Position adjusters and register value-box zones for number clicks
-        start_y = 238
+        start_y = 222
         for idx, adj in enumerate(self.adjusters):
             y_pos = start_y + idx * 23
             if adj["type"] == "slider":
                 adj["rect_minus"] = pygame.Rect(1110, y_pos, 30, 19)
                 adj["rect_plus"] = pygame.Rect(1150, y_pos, 30, 19)
-                # Text box zone for direct numeric typing
                 adj["rect_val"] = pygame.Rect(965, y_pos, 140, 19)
             else: # toggle
                 adj["rect_toggle"] = pygame.Rect(1110, y_pos, 70, 19)
@@ -153,10 +154,13 @@ class PygameApp:
 
     def update_logic(self):
         if self.is_running:
-            current_time = time.time()
-            if current_time - self.last_step_time >= self.step_delay:
+            if self.throttle_speed:
+                current_time = time.time()
+                if current_time - self.last_step_time >= self.step_delay:
+                    self.ga.step()
+                    self.last_step_time = current_time
+            else:
                 self.ga.step()
-                self.last_step_time = current_time
 
     def is_reset_required(self) -> bool:
         """Checks if target setup parameters differ from active GA state."""
@@ -176,7 +180,7 @@ class PygameApp:
             return 50.0  # Support up to 50 APs (color wrapped)
         elif key == "grid_size":
             return 2000.0
-        return float('inf')  # No arbitrary restrictions on weights, mutation, crossover rates
+        return float('inf')  # No arbitrary restrictions
 
     def get_min_bound(self, key: str) -> float:
         """Dynamically calculates minimum bounds for parameter ranges."""
@@ -206,7 +210,6 @@ class PygameApp:
             
             if key == "grid_size":
                 self.target_grid_size = int(val)
-                # Keep target nodes in check
                 self.target_num_nodes = min(self.target_grid_size * self.target_grid_size, self.target_num_nodes)
             elif key == "nodes":
                 self.target_num_nodes = int(val)
@@ -216,7 +219,7 @@ class PygameApp:
                 self.update_param(key, val)
                 
         except ValueError:
-            pass # ignore invalid float syntax
+            pass
             
         self.active_input_key = None
 
@@ -260,7 +263,7 @@ class PygameApp:
                 pygame.quit()
                 sys.exit()
                 
-            # Direct numeric input typing loop (suppresses hotkeys while editing)
+            # Direct numeric input typing loop
             elif self.active_input_key is not None:
                 if event.type == pygame.KEYDOWN:
                     if event.key in [pygame.K_RETURN, pygame.K_KP_ENTER]:
@@ -270,24 +273,22 @@ class PygameApp:
                     elif event.key == pygame.K_BACKSPACE:
                         self.input_text = self.input_text[:-1]
                     else:
-                        # Allow digits, period, and minus sign
                         if event.unicode in "0123456789.-":
                             self.input_text += event.unicode
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
-                        # Clicked elsewhere: apply changes and transition
                         clicked_another = False
                         for adj in self.adjusters:
                             if adj["rect_val"].collidepoint(event.pos):
                                 self.apply_input_value()
                                 self.active_input_key = adj["key"]
-                                # Load current value
                                 val = self.target_grid_size if adj["key"] == "grid_size" else (
                                       self.target_num_nodes if adj["key"] == "nodes" else (
                                       self.target_num_aps if adj["key"] == "aps" else (
-                                      self.show_links if adj["key"] == "show_links" else self.ga_config[adj["key"]]
-                                )))
-                                self.input_text = str(val) if adj["key"] != "show_links" else ""
+                                      self.show_links if adj["key"] == "show_links" else (
+                                      self.throttle_speed if adj["key"] == "throttle_speed" else self.ga_config[adj["key"]]
+                                ))))
+                                self.input_text = str(val) if adj["key"] not in ["show_links", "throttle_speed"] else ""
                                 clicked_another = True
                                 break
                         if not clicked_another:
@@ -338,20 +339,22 @@ class PygameApp:
                     for adj in self.adjusters:
                         key = adj["key"]
                         if adj["rect_val"].collidepoint(pos):
-                            # Clicked value to type directly
                             self.active_input_key = key
                             val = self.target_grid_size if key == "grid_size" else (
                                   self.target_num_nodes if key == "nodes" else (
                                   self.target_num_aps if key == "aps" else (
-                                  self.show_links if key == "show_links" else self.ga_config[key]
-                            )))
-                            self.input_text = str(val) if key != "show_links" else ""
+                                  self.show_links if key == "show_links" else (
+                                  self.throttle_speed if key == "throttle_speed" else self.ga_config[key]
+                            ))))
+                            self.input_text = str(val) if key not in ["show_links", "throttle_speed"] else ""
                             break
                             
                         if adj["type"] == "toggle":
                             if adj["rect_toggle"].collidepoint(pos):
                                 if key == "show_links":
                                     self.show_links = not self.show_links
+                                elif key == "throttle_speed":
+                                    self.throttle_speed = not self.throttle_speed
                         else: # slider minus/plus click
                             val = self.target_grid_size if key == "grid_size" else (
                                   self.target_num_nodes if key == "nodes" else (
@@ -496,7 +499,7 @@ class PygameApp:
         txt_status = self.font_header.render(status_text, True, status_color)
         self.screen.blit(txt_status, (1100, 75))
         
-        # 3. Play / Action Buttons (3 rows of 2 columns)
+        # 3. Play / Action Buttons
         play_btn_color = COLOR_ORANGE if self.is_running else COLOR_GREEN
         play_btn_lbl = "Pause (Space)" if self.is_running else "Play (Space)"
         pygame.draw.rect(self.screen, play_btn_color, self.btn_play, border_radius=6)
@@ -513,17 +516,14 @@ class PygameApp:
         lbl_step10 = self.font_header.render("Step 10", True, COLOR_TEXT)
         self.screen.blit(lbl_step10, (self.btn_step10.centerx - lbl_step10.get_width()//2, self.btn_step10.centery - lbl_step10.get_height()//2))
         
-        # Reset AP Positions (restarts search, keeps nodes)
         pygame.draw.rect(self.screen, COLOR_RED, self.btn_reset_ga, border_radius=6)
         lbl_reset_ga = self.font_header.render("Reset APs (R)", True, COLOR_WHITE)
         self.screen.blit(lbl_reset_ga, (self.btn_reset_ga.centerx - lbl_reset_ga.get_width()//2, self.btn_reset_ga.centery - lbl_reset_ga.get_height()//2))
         
-        # Rotate Nodes (new random device layout, seed increment)
         pygame.draw.rect(self.screen, COLOR_CHART_AVG, self.btn_rotate_nodes, border_radius=6)
         lbl_rot = self.font_header.render("New Devices (N)", True, COLOR_WHITE)
         self.screen.blit(lbl_rot, (self.btn_rotate_nodes.centerx - lbl_rot.get_width()//2, self.btn_rotate_nodes.centery - lbl_rot.get_height()//2))
         
-        # Apply Tgt Configurations
         apply_btn_color = COLOR_ORANGE if reset_needed else COLOR_PANEL_BG
         apply_text_color = COLOR_WHITE if reset_needed else COLOR_TEXT
         pygame.draw.rect(self.screen, apply_btn_color, self.btn_apply_tgt, border_radius=6)
@@ -532,7 +532,6 @@ class PygameApp:
         lbl_apply = self.font_header.render("Apply Settings (A)", True, apply_text_color)
         self.screen.blit(lbl_apply, (self.btn_apply_tgt.centerx - lbl_apply.get_width()//2, self.btn_apply_tgt.centery - lbl_apply.get_height()//2))
         
-        # Display warning label if apply settings is pending
         if reset_needed:
             lbl_warn = self.font_subtitle.render("* Target settings changed. Click Apply Settings.", True, COLOR_YELLOW)
             self.screen.blit(lbl_warn, (820, 196))
@@ -545,7 +544,7 @@ class PygameApp:
         self.screen.blit(lbl_note, (820, 212 if not reset_needed else 224))
         
         # Draw parameter rows
-        adjust_start_y = 230 if not reset_needed else 242
+        adjust_start_y = 225 if not reset_needed else 237
         for idx, adj in enumerate(self.adjusters):
             key = adj["key"]
             if key == "grid_size":
@@ -556,6 +555,8 @@ class PygameApp:
                 val = self.target_num_aps
             elif key == "show_links":
                 val = self.show_links
+            elif key == "throttle_speed":
+                val = self.throttle_speed
             else:
                 val = self.ga_config[key]
                 
@@ -579,7 +580,6 @@ class PygameApp:
                 
             # Text rendering
             if is_active:
-                # Flash cursor over time
                 cursor = "|" if int(time.time() * 2) % 2 == 0 else " "
                 disp_val = self.input_text + cursor
             else:
@@ -589,13 +589,11 @@ class PygameApp:
             self.screen.blit(lbl_val, (adj["rect_val"].x + 5, y_pos + 2))
             
             if adj["type"] == "slider":
-                # Minus
                 pygame.draw.rect(self.screen, COLOR_PANEL_BG, adj["rect_minus"], border_radius=4)
                 pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, adj["rect_minus"], 1, border_radius=4)
                 lbl_minus = self.font_body.render("-", True, COLOR_TEXT)
                 self.screen.blit(lbl_minus, (adj["rect_minus"].centerx - lbl_minus.get_width()//2, adj["rect_minus"].centery - lbl_minus.get_height()//2 - 2))
                 
-                # Plus
                 pygame.draw.rect(self.screen, COLOR_PANEL_BG, adj["rect_plus"], border_radius=4)
                 pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, adj["rect_plus"], 1, border_radius=4)
                 lbl_plus = self.font_body.render("+", True, COLOR_TEXT)
@@ -606,8 +604,8 @@ class PygameApp:
                 lbl_toggle = self.font_body.render("Toggle", True, COLOR_WHITE)
                 self.screen.blit(lbl_toggle, (adj["rect_toggle"].centerx - lbl_toggle.get_width()//2, adj["rect_toggle"].centery - lbl_toggle.get_height()//2 - 1))
             
-        # 5. Model Cost Breakdown
-        breakdown_y = adjust_start_y + 11 * 23
+        # 5. Model Cost Breakdown (Dynamic position)
+        breakdown_y = adjust_start_y + len(self.adjusters) * 23 + 3
         pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (820, breakdown_y), (1180, breakdown_y), 1)
         
         txt_costs = self.font_header.render(f"Best Model Cost: {int(best_ind.total_cost):,}", True, COLOR_ACCENT)
@@ -617,12 +615,12 @@ class PygameApp:
         c_overlap = f"Overlap penalty: {int(best_ind.overlap_cost * self.ga.overlap_weight):,}"
         c_cap = f"Capacity penalty: {int(best_ind.capacity_cost * self.ga.capacity_weight):,}"
         
-        self.screen.blit(self.font_body.render(c_power, True, COLOR_TEXT_MUTED), (820, breakdown_y + 28))
-        self.screen.blit(self.font_body.render(c_overlap, True, COLOR_TEXT_MUTED), (820, breakdown_y + 44))
-        self.screen.blit(self.font_body.render(c_cap, True, COLOR_TEXT_MUTED), (820, breakdown_y + 60))
+        self.screen.blit(self.font_body.render(c_power, True, COLOR_TEXT_MUTED), (820, breakdown_y + 26))
+        self.screen.blit(self.font_body.render(c_overlap, True, COLOR_TEXT_MUTED), (820, breakdown_y + 42))
+        self.screen.blit(self.font_body.render(c_cap, True, COLOR_TEXT_MUTED), (820, breakdown_y + 58))
         
-        # 6. Dynamic Router load bars layout (3 Columns Grid)
-        allocations_y = breakdown_y + 80
+        # 6. Dynamic Router load bars layout
+        allocations_y = breakdown_y + 76
         pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (820, allocations_y), (1180, allocations_y), 1)
         
         txt_routers = self.font_header.render("Router Load Allocations", True, COLOR_ACCENT)
@@ -650,11 +648,9 @@ class PygameApp:
             else:
                 bar_color = AP_COLORS[i % len(AP_COLORS)]
                 
-            # Render label: "R1: 18/20"
             lbl_ap = self.font_mono.render(f"R{i+1}:{load:02d}/{ap_cap}", True, COLOR_TEXT)
             self.screen.blit(lbl_ap, (x_bar, y_bar))
             
-            # Load bar
             pygame.draw.rect(self.screen, (20, 30, 45), (x_bar, y_bar + 13, bar_width, bar_height), border_radius=2)
             if percentage > 0:
                 pygame.draw.rect(self.screen, bar_color, (x_bar, y_bar + 13, int(bar_width * percentage), bar_height), border_radius=2)
