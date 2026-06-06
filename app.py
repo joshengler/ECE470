@@ -67,6 +67,9 @@ class PygameApp:
         self.current_seed = 42
         self.devices = generate_devices(num_devices=DEFAULT_NUM_DEVICES, grid_size=DEFAULT_GRID_SIZE, seed=self.current_seed)
         
+        # Calculate initial capacity dynamically: ceil(total nodes / total APs)
+        initial_capacity = int(math.ceil(DEFAULT_NUM_DEVICES / DEFAULT_NUM_APS))
+        
         # Initial GA configurations
         self.ga_config = {
             "pop_size": 100,
@@ -74,7 +77,7 @@ class PygameApp:
             "crossover_rate": 0.8,
             "elitism_count": 2,
             "ap_radius": 25.0,
-            "ap_capacity": 22,
+            "ap_capacity": initial_capacity,
             "power_weight": 1.0,
             "overlap_weight": 120.0,
             "capacity_weight": 500.0,
@@ -102,7 +105,7 @@ class PygameApp:
         self.rect_grid = pygame.Rect(0, 0, 800, 800)
         self.rect_sidebar = pygame.Rect(800, 0, 400, 800)
         
-        # Dynamic 3-row layout for 6 control buttons
+        # Dynamic 3-row layout for 6 control buttons (User-friendly renames)
         self.btn_play = pygame.Rect(820, 105, 170, 26)
         self.btn_step = pygame.Rect(1010, 105, 170, 26)
         self.btn_step10 = pygame.Rect(820, 136, 170, 26)
@@ -110,10 +113,9 @@ class PygameApp:
         self.btn_rotate_nodes = pygame.Rect(820, 167, 170, 26)    # Regenerates nodes with new seed
         self.btn_apply_tgt = pygame.Rect(1010, 167, 170, 26)       # Applies target size/ap configs
         
-        # 11 Parameter Adjusters (added Show Links toggle)
+        # 10 Parameter Adjusters (Removed ap_capacity slider, added Show Links toggle)
         self.adjusters = [
             {"name": "AP Radius", "key": "ap_radius", "fmt": lambda x: f"{x:.1f}", "step": 1.0, "min": 5.0, "max": 100.0, "type": "slider"},
-            {"name": "AP Capacity", "key": "ap_capacity", "fmt": lambda x: f"{x:d}", "step": 1, "min": 5, "max": 100, "type": "slider"},
             {"name": "Mutation Rate", "key": "mutation_rate", "fmt": lambda x: f"{x*100:.0f}%", "step": 0.01, "min": 0.01, "max": 0.5, "type": "slider"},
             {"name": "Crossover Rate", "key": "crossover_rate", "fmt": lambda x: f"{x*100:.0f}%", "step": 0.05, "min": 0.1, "max": 1.0, "type": "slider"},
             {"name": "Power Wt", "key": "power_weight", "fmt": lambda x: f"{x:.1f}", "step": 0.1, "min": 0.0, "max": 10.0, "type": "slider"},
@@ -126,7 +128,7 @@ class PygameApp:
         ]
         
         # Position adjusters
-        start_y = 230
+        start_y = 225
         for idx, adj in enumerate(self.adjusters):
             y_pos = start_y + idx * 23
             if adj["type"] == "slider":
@@ -169,6 +171,11 @@ class PygameApp:
             grid_size=self.target_grid_size,
             seed=self.current_seed
         )
+        
+        # Recalculate dynamic capacity: ceil(nodes / AP count)
+        dynamic_capacity = int(math.ceil(self.target_num_nodes / self.target_num_aps))
+        self.ga_config["ap_capacity"] = dynamic_capacity
+        
         # Re-initialize Genetic Algorithm
         self.ga = GeneticAlgorithm(
             devices=self.devices,
@@ -265,7 +272,7 @@ class PygameApp:
                                     self.update_param(key, new_val)
 
     def update_param(self, key: str, value: Any):
-        if key in ["ap_capacity", "pop_size"]:
+        if key in ["pop_size"]:
             value = int(value)
         self.ga_config[key] = value
         self.ga.update_parameters({key: value})
@@ -284,7 +291,6 @@ class PygameApp:
         scale = 800.0 / grid_size  # Dynamic scale mapping grid to 800x800 screen space
         
         # 1. Draw dynamic background grid corresponding to real scale
-        # Adjust step size based on grid size cell pixel dimensions (scale)
         if scale >= 5.0:
             step = 1       # Draw every single unit line
         elif scale >= 2.0:
@@ -378,7 +384,7 @@ class PygameApp:
         txt_status = self.font_header.render(status_text, True, status_color)
         self.screen.blit(txt_status, (1100, 75))
         
-        # 3. Play / Action Buttons (3 rows of 2 columns)
+        # 3. Play / Action Buttons (3 rows of 2 columns, user friendly renames)
         play_btn_color = COLOR_ORANGE if self.is_running else COLOR_GREEN
         play_btn_lbl = "Pause (Space)" if self.is_running else "Play (Space)"
         pygame.draw.rect(self.screen, play_btn_color, self.btn_play, border_radius=6)
@@ -395,33 +401,33 @@ class PygameApp:
         lbl_step10 = self.font_header.render("Step 10", True, COLOR_TEXT)
         self.screen.blit(lbl_step10, (self.btn_step10.centerx - lbl_step10.get_width()//2, self.btn_step10.centery - lbl_step10.get_height()//2))
         
-        # Reset GA
+        # Reset AP Positions (restarts search, keeps nodes)
         pygame.draw.rect(self.screen, COLOR_RED, self.btn_reset_ga, border_radius=6)
-        lbl_reset_ga = self.font_header.render("Reset GA (R)", True, COLOR_WHITE)
+        lbl_reset_ga = self.font_header.render("Reset APs (R)", True, COLOR_WHITE)
         self.screen.blit(lbl_reset_ga, (self.btn_reset_ga.centerx - lbl_reset_ga.get_width()//2, self.btn_reset_ga.centery - lbl_reset_ga.get_height()//2))
         
-        # Rotate Nodes
+        # Rotate Nodes (new random device layout, seed increment)
         pygame.draw.rect(self.screen, COLOR_CHART_AVG, self.btn_rotate_nodes, border_radius=6)
-        lbl_rot = self.font_header.render("Rotate Nodes (N)", True, COLOR_WHITE)
+        lbl_rot = self.font_header.render("New Devices (N)", True, COLOR_WHITE)
         self.screen.blit(lbl_rot, (self.btn_rotate_nodes.centerx - lbl_rot.get_width()//2, self.btn_rotate_nodes.centery - lbl_rot.get_height()//2))
         
-        # Apply Tgt
+        # Apply Tgt Configurations
         apply_btn_color = COLOR_ORANGE if reset_needed else COLOR_PANEL_BG
         apply_text_color = COLOR_WHITE if reset_needed else COLOR_TEXT
         pygame.draw.rect(self.screen, apply_btn_color, self.btn_apply_tgt, border_radius=6)
         if not reset_needed:
             pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, self.btn_apply_tgt, 1, border_radius=6)
-        lbl_apply = self.font_header.render("Apply Target (A)", True, apply_text_color)
+        lbl_apply = self.font_header.render("Apply Settings (A)", True, apply_text_color)
         self.screen.blit(lbl_apply, (self.btn_apply_tgt.centerx - lbl_apply.get_width()//2, self.btn_apply_tgt.centery - lbl_apply.get_height()//2))
         
-        # Display warning label if reset is pending
+        # Display warning label if apply settings is pending
         if reset_needed:
-            lbl_warn = self.font_subtitle.render("* Target parameters changed. Requires Apply Target.", True, COLOR_YELLOW)
+            lbl_warn = self.font_subtitle.render("* Target settings changed. Click Apply Settings.", True, COLOR_YELLOW)
             self.screen.blit(lbl_warn, (820, 196))
             
         # 4. Parameters Adjusters list
-        txt_param_hdr = self.font_header.render("Parameters & Constraints", True, COLOR_ACCENT)
-        self.screen.blit(txt_param_hdr, (820, 196 if not reset_needed else 212)) # Shift slightly if warn visible
+        txt_param_hdr = self.font_header.render("Parameters & Target Size Constraints", True, COLOR_ACCENT)
+        self.screen.blit(txt_param_hdr, (820, 196 if not reset_needed else 212))
         
         for adj in self.adjusters:
             key = adj["key"]
@@ -462,24 +468,24 @@ class PygameApp:
                 self.screen.blit(lbl_toggle, (adj["rect_toggle"].centerx - lbl_toggle.get_width()//2, adj["rect_toggle"].centery - lbl_toggle.get_height()//2 - 1))
             
         # 5. Model Cost Breakdown
-        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (820, 488), (1180, 488), 1)
+        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (820, 463), (1180, 463), 1)
         
         txt_costs = self.font_header.render(f"Best Model Cost: {int(best_ind.total_cost):,}", True, COLOR_ACCENT)
-        self.screen.blit(txt_costs, (820, 496))
+        self.screen.blit(txt_costs, (820, 470))
         
         c_power = f"Power cost: {int(best_ind.power_cost * self.ga.power_weight):,}"
         c_overlap = f"Overlap penalty: {int(best_ind.overlap_cost * self.ga.overlap_weight):,}"
         c_cap = f"Capacity penalty: {int(best_ind.capacity_cost * self.ga.capacity_weight):,}"
         
-        self.screen.blit(self.font_body.render(c_power, True, COLOR_TEXT_MUTED), (820, 516))
-        self.screen.blit(self.font_body.render(c_overlap, True, COLOR_TEXT_MUTED), (820, 532))
-        self.screen.blit(self.font_body.render(c_cap, True, COLOR_TEXT_MUTED), (820, 548))
+        self.screen.blit(self.font_body.render(c_power, True, COLOR_TEXT_MUTED), (820, 490))
+        self.screen.blit(self.font_body.render(c_overlap, True, COLOR_TEXT_MUTED), (820, 506))
+        self.screen.blit(self.font_body.render(c_cap, True, COLOR_TEXT_MUTED), (820, 522))
         
         # 6. Dynamic Router load bars layout (3 Columns Grid)
-        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (820, 568), (1180, 568), 1)
+        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (820, 542), (1180, 542), 1)
         
         txt_routers = self.font_header.render("Router Load Allocations", True, COLOR_ACCENT)
-        self.screen.blit(txt_routers, (820, 574))
+        self.screen.blit(txt_routers, (820, 548))
         
         bar_width = 100
         bar_height = 5
@@ -491,7 +497,7 @@ class PygameApp:
             row = i // 3
             
             x_bar = 820 + col * 123
-            y_bar = 596 + row * 26
+            y_bar = 570 + row * 26
             
             load = best_ind.ap_loads[i] if i < len(best_ind.ap_loads) else 0
             percentage = min(1.0, load / ap_cap) if ap_cap > 0 else 0
@@ -503,7 +509,7 @@ class PygameApp:
             else:
                 bar_color = AP_COLORS[i % len(AP_COLORS)]
                 
-            # Render label: "R1: 18/22"
+            # Render label: "R1: 18/20"
             lbl_ap = self.font_mono.render(f"R{i+1}:{load:02d}/{ap_cap}", True, COLOR_TEXT)
             self.screen.blit(lbl_ap, (x_bar, y_bar))
             
@@ -512,13 +518,13 @@ class PygameApp:
             if percentage > 0:
                 pygame.draw.rect(self.screen, bar_color, (x_bar, y_bar + 13, int(bar_width * percentage), bar_height), border_radius=2)
 
-        # 7. Mini Cost History Graph
-        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (820, 730), (1180, 730), 1)
+        # 7. Mini Cost History Graph (Expanded height)
+        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (820, 705), (1180, 705), 1)
         
         chart_x = 820
-        chart_y = 738
+        chart_y = 713
         chart_w = 360
-        chart_h = 50
+        chart_h = 75
         
         pygame.draw.rect(self.screen, COLOR_GRID_BG, (chart_x, chart_y, chart_w, chart_h), border_radius=6)
         
@@ -548,7 +554,7 @@ class PygameApp:
             self.screen.blit(cost_lbl, (chart_x + 5, chart_y + 1))
         else:
             lbl_empty = self.font_subtitle.render("Waiting for history data...", True, COLOR_TEXT_MUTED)
-            self.screen.blit(lbl_empty, (chart_x + 10, chart_y + 18))
+            self.screen.blit(lbl_empty, (chart_x + 10, chart_y + 30))
 
 if __name__ == '__main__':
     app = PygameApp()
