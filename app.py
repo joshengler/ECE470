@@ -547,35 +547,35 @@ class PygameApp:
         lbl_play = self.font_header.render(play_btn_lbl, True, COLOR_WHITE)
         self.screen.blit(lbl_play, (self.btn_play.centerx - lbl_play.get_width()//2, self.btn_play.centery - lbl_play.get_height()//2))
         if self.btn_play.collidepoint(mouse_pos):
-            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_play, 1.5, border_radius=6)
+            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_play, 2, border_radius=6)
         
         pygame.draw.rect(self.screen, COLOR_PANEL_BG, self.btn_step, border_radius=6)
         pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, self.btn_step, 1, border_radius=6)
         lbl_step = self.font_header.render("Step 1 (S)", True, COLOR_TEXT)
         self.screen.blit(lbl_step, (self.btn_step.centerx - lbl_step.get_width()//2, self.btn_step.centery - lbl_step.get_height()//2))
         if self.btn_step.collidepoint(mouse_pos):
-            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_step, 1.5, border_radius=6)
+            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_step, 2, border_radius=6)
         
         pygame.draw.rect(self.screen, COLOR_PANEL_BG, self.btn_step10, border_radius=6)
         pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, self.btn_step10, 1, border_radius=6)
         lbl_step10 = self.font_header.render("Step 10", True, COLOR_TEXT)
         self.screen.blit(lbl_step10, (self.btn_step10.centerx - lbl_step10.get_width()//2, self.btn_step10.centery - lbl_step10.get_height()//2))
         if self.btn_step10.collidepoint(mouse_pos):
-            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_step10, 1.5, border_radius=6)
+            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_step10, 2, border_radius=6)
         
         # Reset AP Positions (restarts search, keeps nodes)
         pygame.draw.rect(self.screen, COLOR_RED, self.btn_reset_ga, border_radius=6)
         lbl_reset_ga = self.font_header.render("Reset APs (R)", True, COLOR_WHITE)
         self.screen.blit(lbl_reset_ga, (self.btn_reset_ga.centerx - lbl_reset_ga.get_width()//2, self.btn_reset_ga.centery - lbl_reset_ga.get_height()//2))
         if self.btn_reset_ga.collidepoint(mouse_pos):
-            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_reset_ga, 1.5, border_radius=6)
+            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_reset_ga, 2, border_radius=6)
         
         # Rotate Nodes (new random device layout, seed increment)
         pygame.draw.rect(self.screen, COLOR_CHART_AVG, self.btn_rotate_nodes, border_radius=6)
         lbl_rot = self.font_header.render("New Devices (N)", True, COLOR_WHITE)
         self.screen.blit(lbl_rot, (self.btn_rotate_nodes.centerx - lbl_rot.get_width()//2, self.btn_rotate_nodes.centery - lbl_rot.get_height()//2))
         if self.btn_rotate_nodes.collidepoint(mouse_pos):
-            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_rotate_nodes, 1.5, border_radius=6)
+            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_rotate_nodes, 2, border_radius=6)
         
         # Apply Tgt Configurations
         apply_btn_color = COLOR_ORANGE if reset_needed else COLOR_PANEL_BG
@@ -586,7 +586,7 @@ class PygameApp:
         lbl_apply = self.font_header.render("Apply Settings (A)", True, apply_text_color)
         self.screen.blit(lbl_apply, (self.btn_apply_tgt.centerx - lbl_apply.get_width()//2, self.btn_apply_tgt.centery - lbl_apply.get_height()//2))
         if self.btn_apply_tgt.collidepoint(mouse_pos):
-            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_apply_tgt, 1.5, border_radius=6)
+            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_apply_tgt, 2, border_radius=6)
         
         # Display warning label if apply settings is pending
         if reset_needed:
