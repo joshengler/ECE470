@@ -7,7 +7,7 @@ from typing import Dict, Any
 from genetic_algorithm import generate_devices, GeneticAlgorithm, Individual, Device
 
 # Initial default configuration (configurable via code constants)
-DEFAULT_GRID_SIZE = 500
+DEFAULT_GRID_SIZE = 100
 DEFAULT_NUM_DEVICES = 100
 DEFAULT_NUM_APS = 5
 
@@ -57,14 +57,15 @@ class PygameApp:
         self.clock = pygame.time.Clock()
         
         # Load fonts safely
-        self.font_title = pygame.font.SysFont("Arial", 24, bold=True)
-        self.font_subtitle = pygame.font.SysFont("Arial", 13, italic=True)
-        self.font_header = pygame.font.SysFont("Arial", 16, bold=True)
+        self.font_title = pygame.font.SysFont("Arial", 22, bold=True)
+        self.font_subtitle = pygame.font.SysFont("Arial", 12, italic=True)
+        self.font_header = pygame.font.SysFont("Arial", 15, bold=True)
         self.font_body = pygame.font.SysFont("Arial", 13)
         self.font_mono = pygame.font.SysFont("Courier", 12, bold=True)
         
         # Initialize active setup from constants
-        self.devices = generate_devices(num_devices=DEFAULT_NUM_DEVICES, grid_size=DEFAULT_GRID_SIZE, seed=42)
+        self.current_seed = 42
+        self.devices = generate_devices(num_devices=DEFAULT_NUM_DEVICES, grid_size=DEFAULT_GRID_SIZE, seed=self.current_seed)
         
         # Initial GA configurations
         self.ga_config = {
@@ -90,6 +91,7 @@ class PygameApp:
         self.target_grid_size = DEFAULT_GRID_SIZE
         self.target_num_nodes = DEFAULT_NUM_DEVICES
         self.target_num_aps = DEFAULT_NUM_APS
+        self.show_links = True
         
         # Execution control
         self.is_running = False
@@ -100,32 +102,38 @@ class PygameApp:
         self.rect_grid = pygame.Rect(0, 0, 800, 800)
         self.rect_sidebar = pygame.Rect(800, 0, 400, 800)
         
-        # Buttons
-        self.btn_play = pygame.Rect(820, 110, 170, 35)
-        self.btn_step = pygame.Rect(1010, 110, 170, 35)
-        self.btn_step10 = pygame.Rect(820, 155, 170, 35)
-        self.btn_reset = pygame.Rect(1010, 155, 170, 35)
+        # Dynamic 3-row layout for 6 control buttons
+        self.btn_play = pygame.Rect(820, 105, 170, 26)
+        self.btn_step = pygame.Rect(1010, 105, 170, 26)
+        self.btn_step10 = pygame.Rect(820, 136, 170, 26)
+        self.btn_reset_ga = pygame.Rect(1010, 136, 170, 26)      # Resets population, keeps nodes
+        self.btn_rotate_nodes = pygame.Rect(820, 167, 170, 26)    # Regenerates nodes with new seed
+        self.btn_apply_tgt = pygame.Rect(1010, 167, 170, 26)       # Applies target size/ap configs
         
-        # 10 Parameter Adjusters
+        # 11 Parameter Adjusters (added Show Links toggle)
         self.adjusters = [
-            {"name": "AP Radius", "key": "ap_radius", "fmt": lambda x: f"{x:.1f}", "step": 1.0, "min": 5.0, "max": 100.0},
-            {"name": "AP Capacity", "key": "ap_capacity", "fmt": lambda x: f"{x:d}", "step": 1, "min": 5, "max": 100},
-            {"name": "Mutation Rate", "key": "mutation_rate", "fmt": lambda x: f"{x*100:.0f}%", "step": 0.01, "min": 0.01, "max": 0.5},
-            {"name": "Crossover Rate", "key": "crossover_rate", "fmt": lambda x: f"{x*100:.0f}%", "step": 0.05, "min": 0.1, "max": 1.0},
-            {"name": "Power Wt", "key": "power_weight", "fmt": lambda x: f"{x:.1f}", "step": 0.1, "min": 0.0, "max": 10.0},
-            {"name": "Overlap Wt", "key": "overlap_weight", "fmt": lambda x: f"{x:.0f}", "step": 10.0, "min": 0.0, "max": 1000.0},
-            {"name": "Capacity Wt", "key": "capacity_weight", "fmt": lambda x: f"{x:.0f}", "step": 50.0, "min": 0.0, "max": 2000.0},
-            {"name": "Grid Size (Tgt)", "key": "grid_size", "fmt": lambda x: f"{x:d}", "step": 50, "min": 50, "max": 1000},
-            {"name": "Nodes (Tgt)", "key": "nodes", "fmt": lambda x: f"{x:d}", "step": 10, "min": 10, "max": 500},
-            {"name": "AP Count (Tgt)", "key": "aps", "fmt": lambda x: f"{x:d}", "step": 1, "min": 1, "max": 15},
+            {"name": "AP Radius", "key": "ap_radius", "fmt": lambda x: f"{x:.1f}", "step": 1.0, "min": 5.0, "max": 100.0, "type": "slider"},
+            {"name": "AP Capacity", "key": "ap_capacity", "fmt": lambda x: f"{x:d}", "step": 1, "min": 5, "max": 100, "type": "slider"},
+            {"name": "Mutation Rate", "key": "mutation_rate", "fmt": lambda x: f"{x*100:.0f}%", "step": 0.01, "min": 0.01, "max": 0.5, "type": "slider"},
+            {"name": "Crossover Rate", "key": "crossover_rate", "fmt": lambda x: f"{x*100:.0f}%", "step": 0.05, "min": 0.1, "max": 1.0, "type": "slider"},
+            {"name": "Power Wt", "key": "power_weight", "fmt": lambda x: f"{x:.1f}", "step": 0.1, "min": 0.0, "max": 10.0, "type": "slider"},
+            {"name": "Overlap Wt", "key": "overlap_weight", "fmt": lambda x: f"{x:.0f}", "step": 10.0, "min": 0.0, "max": 1000.0, "type": "slider"},
+            {"name": "Capacity Wt", "key": "capacity_weight", "fmt": lambda x: f"{x:.0f}", "step": 50.0, "min": 0.0, "max": 2000.0, "type": "slider"},
+            {"name": "Grid Size (Tgt)", "key": "grid_size", "fmt": lambda x: f"{x:d}", "step": 50, "min": 50, "max": 1000, "type": "slider"},
+            {"name": "Nodes (Tgt)", "key": "nodes", "fmt": lambda x: f"{x:d}", "step": 10, "min": 10, "max": 500, "type": "slider"},
+            {"name": "AP Count (Tgt)", "key": "aps", "fmt": lambda x: f"{x:d}", "step": 1, "min": 1, "max": 15, "type": "slider"},
+            {"name": "Show Links", "key": "show_links", "fmt": lambda x: "ON" if x else "OFF", "step": 0, "min": 0, "max": 0, "type": "toggle"}
         ]
         
         # Position adjusters
-        start_y = 210
+        start_y = 230
         for idx, adj in enumerate(self.adjusters):
-            y_pos = start_y + idx * 24
-            adj["rect_minus"] = pygame.Rect(1110, y_pos, 30, 20)
-            adj["rect_plus"] = pygame.Rect(1150, y_pos, 30, 20)
+            y_pos = start_y + idx * 23
+            if adj["type"] == "slider":
+                adj["rect_minus"] = pygame.Rect(1110, y_pos, 30, 19)
+                adj["rect_plus"] = pygame.Rect(1150, y_pos, 30, 19)
+            else: # toggle
+                adj["rect_toggle"] = pygame.Rect(1110, y_pos, 70, 19)
 
     def run(self):
         while True:
@@ -149,14 +157,17 @@ class PygameApp:
             self.target_num_aps != self.ga.num_aps
         )
 
-    def perform_apply_and_reset(self):
+    def perform_apply_and_reset(self, new_seed: bool = False):
         """Regenerates devices and initializes a new GA using target values."""
         self.is_running = False
+        if new_seed:
+            self.current_seed += 1
+            
         # Generate new devices
         self.devices = generate_devices(
             num_devices=self.target_num_nodes,
             grid_size=self.target_grid_size,
-            seed=42
+            seed=self.current_seed
         )
         # Re-initialize Genetic Algorithm
         self.ga = GeneticAlgorithm(
@@ -188,7 +199,12 @@ class PygameApp:
                     self.is_running = False
                     self.ga.step()
                 elif event.key == pygame.K_r:
-                    self.perform_apply_and_reset()
+                    self.is_running = False
+                    self.ga.initialize_population()
+                elif event.key == pygame.K_n:
+                    self.perform_apply_and_reset(new_seed=True)
+                elif event.key == pygame.K_a:
+                    self.perform_apply_and_reset(new_seed=False)
                 elif event.key == pygame.K_UP:
                     self.step_delay = max(0.005, self.step_delay - 0.01)
                 elif event.key == pygame.K_DOWN:
@@ -208,38 +224,45 @@ class PygameApp:
                         self.is_running = False
                         for _ in range(10):
                             self.ga.step()
-                    elif self.btn_reset.collidepoint(pos):
-                        self.perform_apply_and_reset()
+                    elif self.btn_reset_ga.collidepoint(pos):
+                        self.is_running = False
+                        self.ga.initialize_population()
+                    elif self.btn_rotate_nodes.collidepoint(pos):
+                        self.perform_apply_and_reset(new_seed=True)
+                    elif self.btn_apply_tgt.collidepoint(pos):
+                        self.perform_apply_and_reset(new_seed=False)
                         
                     # 2. Adjusters buttons
                     for adj in self.adjusters:
                         key = adj["key"]
-                        
-                        # Handle target configuration changes separately
-                        if key in ["grid_size", "nodes", "aps"]:
-                            if adj["rect_minus"].collidepoint(pos):
-                                if key == "grid_size":
-                                    self.target_grid_size = max(adj["min"], self.target_grid_size - adj["step"])
-                                elif key == "nodes":
-                                    self.target_num_nodes = max(adj["min"], self.target_num_nodes - adj["step"])
-                                elif key == "aps":
-                                    self.target_num_aps = max(adj["min"], self.target_num_aps - adj["step"])
-                            elif adj["rect_plus"].collidepoint(pos):
-                                if key == "grid_size":
-                                    self.target_grid_size = min(adj["max"], self.target_grid_size + adj["step"])
-                                elif key == "nodes":
-                                    self.target_num_nodes = min(adj["max"], self.target_num_nodes + adj["step"])
-                                elif key == "aps":
-                                    self.target_num_aps = min(adj["max"], self.target_num_aps + adj["step"])
-                        else:
-                            # Live parameter adjustment
-                            val = self.ga_config[key]
-                            if adj["rect_minus"].collidepoint(pos):
-                                new_val = max(adj["min"], val - adj["step"])
-                                self.update_param(key, new_val)
-                            elif adj["rect_plus"].collidepoint(pos):
-                                new_val = min(adj["max"], val + adj["step"])
-                                self.update_param(key, new_val)
+                        if adj["type"] == "toggle":
+                            if adj["rect_toggle"].collidepoint(pos):
+                                if key == "show_links":
+                                    self.show_links = not self.show_links
+                        else: # slider
+                            if key in ["grid_size", "nodes", "aps"]:
+                                if adj["rect_minus"].collidepoint(pos):
+                                    if key == "grid_size":
+                                        self.target_grid_size = max(adj["min"], self.target_grid_size - adj["step"])
+                                    elif key == "nodes":
+                                        self.target_num_nodes = max(adj["min"], self.target_num_nodes - adj["step"])
+                                    elif key == "aps":
+                                        self.target_num_aps = max(adj["min"], self.target_num_aps - adj["step"])
+                                elif adj["rect_plus"].collidepoint(pos):
+                                    if key == "grid_size":
+                                        self.target_grid_size = min(adj["max"], self.target_grid_size + adj["step"])
+                                    elif key == "nodes":
+                                        self.target_num_nodes = min(adj["max"], self.target_num_nodes + adj["step"])
+                                    elif key == "aps":
+                                        self.target_num_aps = min(adj["max"], self.target_num_aps + adj["step"])
+                            else:
+                                val = self.ga_config[key]
+                                if adj["rect_minus"].collidepoint(pos):
+                                    new_val = max(adj["min"], val - adj["step"])
+                                    self.update_param(key, new_val)
+                                elif adj["rect_plus"].collidepoint(pos):
+                                    new_val = min(adj["max"], val + adj["step"])
+                                    self.update_param(key, new_val)
 
     def update_param(self, key: str, value: Any):
         if key in ["ap_capacity", "pop_size"]:
@@ -260,41 +283,44 @@ class PygameApp:
         grid_size = self.ga.grid_size
         scale = 800.0 / grid_size  # Dynamic scale mapping grid to 800x800 screen space
         
-        # 1. Draw subtle grid coordinate lines dynamically
-        if grid_size <= 100:
-            step = 10
-        elif grid_size <= 250:
-            step = 25
-        elif grid_size <= 500:
-            step = 50
+        # 1. Draw dynamic background grid corresponding to real scale
+        # Adjust step size based on grid size cell pixel dimensions (scale)
+        if scale >= 5.0:
+            step = 1       # Draw every single unit line
+        elif scale >= 2.0:
+            step = 5       # Draw line every 5 units
+        elif scale * 10 >= 4.0:
+            step = 10      # Draw line every 10 units
+        elif scale * 50 >= 4.0:
+            step = 50      # Draw line every 50 units
         else:
-            step = 100
+            step = 100     # Draw line every 100 units
             
         for i in range(step, grid_size, step):
             screen_pos = int(i * scale)
             pygame.draw.line(self.screen, (20, 25, 40), (screen_pos, 0), (screen_pos, 800), 1)
             pygame.draw.line(self.screen, (20, 25, 40), (0, screen_pos), (800, screen_pos), 1)
             
-        # 2. Draw AP coverage circles (translucent)
+        # 2. Draw AP coverage circles (translucent overlay)
         overlay = pygame.Surface((800, 800), pygame.SRCALPHA)
         ap_radius_screen = int(self.ga.ap_radius * scale)
         for idx, ap in enumerate(best_ind.aps):
             cx, cy = int(ap[0] * scale), int(ap[1] * scale)
             color = AP_COLORS[idx % len(AP_COLORS)]
-            # Semi-transparent coverage circle
             pygame.draw.circle(overlay, color + (20,), (cx, cy), ap_radius_screen)
             pygame.draw.circle(overlay, color + (50,), (cx, cy), ap_radius_screen, 1)
         self.screen.blit(overlay, (0, 0))
         
-        # 3. Draw connection paths (device to AP)
-        for dev in self.devices:
-            ap_idx = best_ind.device_assignments[dev.id]
-            if 0 <= ap_idx < len(best_ind.aps):
-                ap = best_ind.aps[ap_idx]
-                ap_color = AP_COLORS[ap_idx % len(AP_COLORS)]
-                start_pos = (int(dev.x * scale), int(dev.y * scale))
-                end_pos = (int(ap[0] * scale), int(ap[1] * scale))
-                pygame.draw.line(self.screen, ap_color + (45,), start_pos, end_pos, 1)
+        # 3. Draw connection paths (only if show_links toggle is ON)
+        if self.show_links:
+            for dev in self.devices:
+                ap_idx = best_ind.device_assignments[dev.id]
+                if 0 <= ap_idx < len(best_ind.aps):
+                    ap = best_ind.aps[ap_idx]
+                    ap_color = AP_COLORS[ap_idx % len(AP_COLORS)]
+                    start_pos = (int(dev.x * scale), int(dev.y * scale))
+                    end_pos = (int(ap[0] * scale), int(ap[1] * scale))
+                    pygame.draw.line(self.screen, ap_color + (45,), start_pos, end_pos, 1)
                 
         # 4. Draw Device Nodes
         for dev in self.devices:
@@ -336,19 +362,23 @@ class PygameApp:
         # Render active parameters status
         sub_text = f"Active: Grid {self.ga.grid_size}x{self.ga.grid_size} | Nodes: {len(self.devices)} | APs: {self.ga.num_aps}"
         sub = self.font_subtitle.render(sub_text, True, COLOR_TEXT_MUTED)
-        self.screen.blit(sub, (820, 45))
-        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (820, 70), (1180, 70), 1)
+        self.screen.blit(sub, (820, 43))
+        
+        seed_txt = f"Seed: {self.current_seed}"
+        lbl_seed = self.font_subtitle.render(seed_txt, True, COLOR_ACCENT)
+        self.screen.blit(lbl_seed, (1120, 43))
+        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (820, 65), (1180, 65), 1)
         
         # 2. Status details
         txt_gen = self.font_header.render(f"Generation: {self.ga.generation}", True, COLOR_TEXT)
-        self.screen.blit(txt_gen, (820, 80))
+        self.screen.blit(txt_gen, (820, 75))
         
         status_text = "RUNNING" if self.is_running else "PAUSED"
         status_color = COLOR_GREEN if self.is_running else COLOR_ORANGE
         txt_status = self.font_header.render(status_text, True, status_color)
-        self.screen.blit(txt_status, (1100, 80))
+        self.screen.blit(txt_status, (1100, 75))
         
-        # 3. Play / Action Buttons
+        # 3. Play / Action Buttons (3 rows of 2 columns)
         play_btn_color = COLOR_ORANGE if self.is_running else COLOR_GREEN
         play_btn_lbl = "Pause (Space)" if self.is_running else "Play (Space)"
         pygame.draw.rect(self.screen, play_btn_color, self.btn_play, border_radius=6)
@@ -365,20 +395,33 @@ class PygameApp:
         lbl_step10 = self.font_header.render("Step 10", True, COLOR_TEXT)
         self.screen.blit(lbl_step10, (self.btn_step10.centerx - lbl_step10.get_width()//2, self.btn_step10.centery - lbl_step10.get_height()//2))
         
-        reset_btn_color = COLOR_ORANGE if reset_needed else COLOR_RED
-        reset_btn_lbl = "Apply & Reset" if reset_needed else "Reset (R)"
-        pygame.draw.rect(self.screen, reset_btn_color, self.btn_reset, border_radius=6)
-        lbl_reset = self.font_header.render(reset_btn_lbl, True, COLOR_WHITE)
-        self.screen.blit(lbl_reset, (self.btn_reset.centerx - lbl_reset.get_width()//2, self.btn_reset.centery - lbl_reset.get_height()//2))
+        # Reset GA
+        pygame.draw.rect(self.screen, COLOR_RED, self.btn_reset_ga, border_radius=6)
+        lbl_reset_ga = self.font_header.render("Reset GA (R)", True, COLOR_WHITE)
+        self.screen.blit(lbl_reset_ga, (self.btn_reset_ga.centerx - lbl_reset_ga.get_width()//2, self.btn_reset_ga.centery - lbl_reset_ga.get_height()//2))
+        
+        # Rotate Nodes
+        pygame.draw.rect(self.screen, COLOR_CHART_AVG, self.btn_rotate_nodes, border_radius=6)
+        lbl_rot = self.font_header.render("Rotate Nodes (N)", True, COLOR_WHITE)
+        self.screen.blit(lbl_rot, (self.btn_rotate_nodes.centerx - lbl_rot.get_width()//2, self.btn_rotate_nodes.centery - lbl_rot.get_height()//2))
+        
+        # Apply Tgt
+        apply_btn_color = COLOR_ORANGE if reset_needed else COLOR_PANEL_BG
+        apply_text_color = COLOR_WHITE if reset_needed else COLOR_TEXT
+        pygame.draw.rect(self.screen, apply_btn_color, self.btn_apply_tgt, border_radius=6)
+        if not reset_needed:
+            pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, self.btn_apply_tgt, 1, border_radius=6)
+        lbl_apply = self.font_header.render("Apply Target (A)", True, apply_text_color)
+        self.screen.blit(lbl_apply, (self.btn_apply_tgt.centerx - lbl_apply.get_width()//2, self.btn_apply_tgt.centery - lbl_apply.get_height()//2))
         
         # Display warning label if reset is pending
         if reset_needed:
-            lbl_warn = self.font_subtitle.render("* Target parameters changed. Requires Reset.", True, COLOR_YELLOW)
-            self.screen.blit(lbl_warn, (820, 192))
+            lbl_warn = self.font_subtitle.render("* Target parameters changed. Requires Apply Target.", True, COLOR_YELLOW)
+            self.screen.blit(lbl_warn, (820, 196))
             
         # 4. Parameters Adjusters list
-        txt_param_hdr = self.font_header.render("Parameters", True, COLOR_ACCENT)
-        self.screen.blit(txt_param_hdr, (820, 192 if not reset_needed else 206)) # Shift slightly if warn visible
+        txt_param_hdr = self.font_header.render("Parameters & Constraints", True, COLOR_ACCENT)
+        self.screen.blit(txt_param_hdr, (820, 196 if not reset_needed else 212)) # Shift slightly if warn visible
         
         for adj in self.adjusters:
             key = adj["key"]
@@ -388,47 +431,55 @@ class PygameApp:
                 val = self.target_num_nodes
             elif key == "aps":
                 val = self.target_num_aps
+            elif key == "show_links":
+                val = self.show_links
             else:
                 val = self.ga_config[key]
                 
-            y_pos = adj["rect_minus"].y
+            y_pos = adj["rect_minus"].y if adj["type"] == "slider" else adj["rect_toggle"].y
             
             lbl_name = self.font_body.render(adj["name"], True, COLOR_TEXT_MUTED)
             lbl_val = self.font_mono.render(adj["fmt"](val), True, COLOR_TEXT)
             self.screen.blit(lbl_name, (820, y_pos + 1))
             self.screen.blit(lbl_val, (970, y_pos + 1))
             
-            # Minus
-            pygame.draw.rect(self.screen, COLOR_PANEL_BG, adj["rect_minus"], border_radius=4)
-            pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, adj["rect_minus"], 1, border_radius=4)
-            lbl_minus = self.font_body.render("-", True, COLOR_TEXT)
-            self.screen.blit(lbl_minus, (adj["rect_minus"].centerx - lbl_minus.get_width()//2, adj["rect_minus"].centery - lbl_minus.get_height()//2 - 2))
-            
-            # Plus
-            pygame.draw.rect(self.screen, COLOR_PANEL_BG, adj["rect_plus"], border_radius=4)
-            pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, adj["rect_plus"], 1, border_radius=4)
-            lbl_plus = self.font_body.render("+", True, COLOR_TEXT)
-            self.screen.blit(lbl_plus, (adj["rect_plus"].centerx - lbl_plus.get_width()//2, adj["rect_plus"].centery - lbl_plus.get_height()//2 - 1))
+            if adj["type"] == "slider":
+                # Minus
+                pygame.draw.rect(self.screen, COLOR_PANEL_BG, adj["rect_minus"], border_radius=4)
+                pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, adj["rect_minus"], 1, border_radius=4)
+                lbl_minus = self.font_body.render("-", True, COLOR_TEXT)
+                self.screen.blit(lbl_minus, (adj["rect_minus"].centerx - lbl_minus.get_width()//2, adj["rect_minus"].centery - lbl_minus.get_height()//2 - 2))
+                
+                # Plus
+                pygame.draw.rect(self.screen, COLOR_PANEL_BG, adj["rect_plus"], border_radius=4)
+                pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, adj["rect_plus"], 1, border_radius=4)
+                lbl_plus = self.font_body.render("+", True, COLOR_TEXT)
+                self.screen.blit(lbl_plus, (adj["rect_plus"].centerx - lbl_plus.get_width()//2, adj["rect_plus"].centery - lbl_plus.get_height()//2 - 1))
+            else: # toggle
+                toggle_btn_color = COLOR_GREEN if val else COLOR_RED
+                pygame.draw.rect(self.screen, toggle_btn_color, adj["rect_toggle"], border_radius=4)
+                lbl_toggle = self.font_body.render("Toggle", True, COLOR_WHITE)
+                self.screen.blit(lbl_toggle, (adj["rect_toggle"].centerx - lbl_toggle.get_width()//2, adj["rect_toggle"].centery - lbl_toggle.get_height()//2 - 1))
             
         # 5. Model Cost Breakdown
-        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (820, 460), (1180, 460), 1)
+        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (820, 488), (1180, 488), 1)
         
         txt_costs = self.font_header.render(f"Best Model Cost: {int(best_ind.total_cost):,}", True, COLOR_ACCENT)
-        self.screen.blit(txt_costs, (820, 470))
+        self.screen.blit(txt_costs, (820, 496))
         
         c_power = f"Power cost: {int(best_ind.power_cost * self.ga.power_weight):,}"
         c_overlap = f"Overlap penalty: {int(best_ind.overlap_cost * self.ga.overlap_weight):,}"
         c_cap = f"Capacity penalty: {int(best_ind.capacity_cost * self.ga.capacity_weight):,}"
         
-        self.screen.blit(self.font_body.render(c_power, True, COLOR_TEXT_MUTED), (820, 492))
-        self.screen.blit(self.font_body.render(c_overlap, True, COLOR_TEXT_MUTED), (820, 510))
-        self.screen.blit(self.font_body.render(c_cap, True, COLOR_TEXT_MUTED), (820, 528))
+        self.screen.blit(self.font_body.render(c_power, True, COLOR_TEXT_MUTED), (820, 516))
+        self.screen.blit(self.font_body.render(c_overlap, True, COLOR_TEXT_MUTED), (820, 532))
+        self.screen.blit(self.font_body.render(c_cap, True, COLOR_TEXT_MUTED), (820, 548))
         
         # 6. Dynamic Router load bars layout (3 Columns Grid)
-        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (820, 552), (1180, 552), 1)
+        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (820, 568), (1180, 568), 1)
         
         txt_routers = self.font_header.render("Router Load Allocations", True, COLOR_ACCENT)
-        self.screen.blit(txt_routers, (820, 560))
+        self.screen.blit(txt_routers, (820, 574))
         
         bar_width = 100
         bar_height = 5
@@ -440,7 +491,7 @@ class PygameApp:
             row = i // 3
             
             x_bar = 820 + col * 123
-            y_bar = 585 + row * 30
+            y_bar = 596 + row * 26
             
             load = best_ind.ap_loads[i] if i < len(best_ind.ap_loads) else 0
             percentage = min(1.0, load / ap_cap) if ap_cap > 0 else 0
@@ -457,15 +508,15 @@ class PygameApp:
             self.screen.blit(lbl_ap, (x_bar, y_bar))
             
             # Load bar
-            pygame.draw.rect(self.screen, (20, 30, 45), (x_bar, y_bar + 14, bar_width, bar_height), border_radius=2)
+            pygame.draw.rect(self.screen, (20, 30, 45), (x_bar, y_bar + 13, bar_width, bar_height), border_radius=2)
             if percentage > 0:
-                pygame.draw.rect(self.screen, bar_color, (x_bar, y_bar + 14, int(bar_width * percentage), bar_height), border_radius=2)
+                pygame.draw.rect(self.screen, bar_color, (x_bar, y_bar + 13, int(bar_width * percentage), bar_height), border_radius=2)
 
         # 7. Mini Cost History Graph
-        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (820, 736), (1180, 736), 1)
+        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (820, 730), (1180, 730), 1)
         
         chart_x = 820
-        chart_y = 744
+        chart_y = 738
         chart_w = 360
         chart_h = 50
         
@@ -500,7 +551,5 @@ class PygameApp:
             self.screen.blit(lbl_empty, (chart_x + 10, chart_y + 18))
 
 if __name__ == '__main__':
-    # Initialize defaults from constants which can be overwritten directly in the script
-    # e.g., to override via code: set DEFAULT_GRID_SIZE = 500, etc.
     app = PygameApp()
     app.run()
