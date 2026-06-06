@@ -740,8 +740,10 @@ class PygameApp:
         
         pygame.draw.rect(self.screen, COLOR_GRID_BG, (chart_x, chart_y, chart_w, chart_h), border_radius=6)
         
-        hist = self.ga.best_history
-        avg_hist = self.ga.avg_history
+        # Show a moving window of the last 150 generations for visual detail
+        full_hist = self.ga.best_history
+        hist = full_hist[-150:]
+        avg_hist = self.ga.avg_history[-150:]
         
         if len(hist) > 1:
             max_val = max(max(hist), max(avg_hist))
@@ -766,7 +768,8 @@ class PygameApp:
             pygame.draw.lines(self.screen, COLOR_CHART_AVG, False, pts_avg, 1)
             pygame.draw.lines(self.screen, COLOR_ACCENT, False, pts_best, 2)
             
-            cost_lbl = self.font_subtitle.render(f"Cost: {int(min_val):,} to {int(max_val):,}", True, COLOR_TEXT_MUTED)
+            label_prefix = f"Cost (last {len(hist)})" if len(full_hist) > 150 else "Cost History"
+            cost_lbl = self.font_subtitle.render(f"{label_prefix}: {int(min_val):,} to {int(max_val):,}", True, COLOR_TEXT_MUTED)
             self.screen.blit(cost_lbl, (chart_x + 5, chart_y + 1))
         else:
             lbl_empty = self.font_subtitle.render("Waiting for history data...", True, COLOR_TEXT_MUTED)
