@@ -56,12 +56,12 @@ class PygameApp:
         pygame.display.set_caption("Wireless AP Genetic Algorithm Optimizer")
         self.clock = pygame.time.Clock()
         
-        # Load fonts safely
-        self.font_title = pygame.font.SysFont("Arial", 22, bold=True)
-        self.font_subtitle = pygame.font.SysFont("Arial", 12, italic=True)
-        self.font_header = pygame.font.SysFont("Arial", 15, bold=True)
-        self.font_body = pygame.font.SysFont("Arial", 13)
-        self.font_mono = pygame.font.SysFont("Courier", 12, bold=True)
+        # Load premium system fonts safely
+        self.font_title = pygame.font.SysFont("Trebuchet MS", 21, bold=True)
+        self.font_subtitle = pygame.font.SysFont("Verdana", 11, italic=True)
+        self.font_header = pygame.font.SysFont("Trebuchet MS", 15, bold=True)
+        self.font_body = pygame.font.SysFont("Verdana", 12)
+        self.font_mono = pygame.font.SysFont("Courier New", 12, bold=True)
         
         # Initialize active setup from constants
         self.current_seed = 42
@@ -97,9 +97,10 @@ class PygameApp:
         self.show_links = True
         self.throttle_speed = True
         
-        # Textbox Input variables (for typing in numbers directly)
+        # Textbox Input variables (for typing in numbers directly with placeholder support)
         self.active_input_key = None
         self.input_text = ""
+        self.placeholder_text = ""
         
         # Execution control
         self.is_running = False
@@ -149,6 +150,7 @@ class PygameApp:
         while True:
             self.handle_events()
             self.update_logic()
+            self.update_cursor()
             self.draw()
             self.clock.tick(60)
 
@@ -162,6 +164,37 @@ class PygameApp:
             else:
                 self.ga.step()
 
+    def update_cursor(self):
+        """Changes the mouse cursor to a hand when hovering over interactive components."""
+        pos = pygame.mouse.get_pos()
+        hovering = False
+        
+        # Check main buttons
+        for btn in [self.btn_play, self.btn_step, self.btn_step10, self.btn_reset_ga, self.btn_rotate_nodes, self.btn_apply_tgt]:
+            if btn.collidepoint(pos):
+                hovering = True
+                break
+                
+        if not hovering:
+            # Check adjusters
+            for adj in self.adjusters:
+                if adj["rect_val"].collidepoint(pos):
+                    hovering = True
+                    break
+                if adj["type"] == "slider":
+                    if adj["rect_minus"].collidepoint(pos) or adj["rect_plus"].collidepoint(pos):
+                        hovering = True
+                        break
+                elif adj["type"] == "toggle":
+                    if adj["rect_toggle"].collidepoint(pos):
+                        hovering = True
+                        break
+                        
+        if hovering:
+            pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_HAND)
+        else:
+            pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
+
     def is_reset_required(self) -> bool:
         """Checks if target setup parameters differ from active GA state."""
         return (
@@ -171,23 +204,27 @@ class PygameApp:
         )
 
     def get_max_bound(self, key: str) -> float:
-        """Dynamically calculates maximum bounds for parameter ranges."""
+        """Dynamically calculates maximum bounds for parameter ranges to prevent crash/nonsense values."""
         if key == "ap_radius":
-            return float(self.ga.grid_size)  # Hard cap of grid size
+            return float(self.ga.grid_size)  # Cap at active grid size
         elif key == "nodes":
-            return float(self.target_grid_size * self.target_grid_size)  # Limit of unique tiles
+            return float(self.target_grid_size * self.target_grid_size)  # Cap at unique cells grid limit
         elif key == "aps":
-            return 50.0  # Support up to 50 APs (color wrapped)
+            return 15.0  # Safe cap to fit sidebar columns load bars and AP color bounds
         elif key == "grid_size":
-            return 2000.0
-        return float('inf')  # No arbitrary restrictions
+            return 1000.0  # Limit grid coordinate sizes to prevent rendering overload
+        elif key in ["mutation_rate", "crossover_rate"]:
+            return 1.0   # Cap probabilities strictly at 1.0 (100%)
+        elif key in ["power_weight", "overlap_weight", "capacity_weight"]:
+            return 10000.0  # Practical weight ceiling
+        return float('inf')
 
     def get_min_bound(self, key: str) -> float:
         """Dynamically calculates minimum bounds for parameter ranges."""
         if key in ["grid_size", "nodes", "aps"]:
-            return 1.0
+            return 10.0 if key == "grid_size" else 1.0
         elif key == "ap_radius":
-            return 0.1
+            return 0.5
         return 0.0
 
     def apply_input_value(self):
@@ -195,12 +232,12 @@ class PygameApp:
         if not self.active_input_key:
             return
         
+        val_text = self.input_text.replace('%', '').strip()
+        if not val_text:
+            self.active_input_key = None
+            return  # Empty string: keep previous value
+            
         try:
-            val_text = self.input_text.replace('%', '').strip()
-            if not val_text:
-                self.active_input_key = None
-                return
-                
             val = float(val_text)
             key = self.active_input_key
             
@@ -263,7 +300,7 @@ class PygameApp:
                 pygame.quit()
                 sys.exit()
                 
-            # Direct numeric input typing loop
+            # Direct numeric input typing loop (blocks hotkeys while editing)
             elif self.active_input_key is not None:
                 if event.type == pygame.KEYDOWN:
                     if event.key in [pygame.K_RETURN, pygame.K_KP_ENTER]:
@@ -288,7 +325,8 @@ class PygameApp:
                                       self.show_links if adj["key"] == "show_links" else (
                                       self.throttle_speed if adj["key"] == "throttle_speed" else self.ga_config[adj["key"]]
                                 ))))
-                                self.input_text = str(val) if adj["key"] not in ["show_links", "throttle_speed"] else ""
+                                self.placeholder_text = adj["fmt"](val) if adj["key"] not in ["show_links", "throttle_speed"] else ""
+                                self.input_text = ""  # Start empty: allow typing immediately
                                 clicked_another = True
                                 break
                         if not clicked_another:
@@ -339,6 +377,7 @@ class PygameApp:
                     for adj in self.adjusters:
                         key = adj["key"]
                         if adj["rect_val"].collidepoint(pos):
+                            # Clicked value to type directly
                             self.active_input_key = key
                             val = self.target_grid_size if key == "grid_size" else (
                                   self.target_num_nodes if key == "nodes" else (
@@ -346,7 +385,8 @@ class PygameApp:
                                   self.show_links if key == "show_links" else (
                                   self.throttle_speed if key == "throttle_speed" else self.ga_config[key]
                             ))))
-                            self.input_text = str(val) if key not in ["show_links", "throttle_speed"] else ""
+                            self.placeholder_text = adj["fmt"](val) if key not in ["show_links", "throttle_speed"] else ""
+                            self.input_text = ""  # Start empty: allow typing immediately
                             break
                             
                         if adj["type"] == "toggle":
@@ -475,8 +515,9 @@ class PygameApp:
         
         best_ind = self.ga.get_best_individual()
         reset_needed = self.is_reset_required()
+        mouse_pos = pygame.mouse.get_pos()
         
-        # 1. Header Title
+        # 1. Header Title (Verdana/Trebuchet Fonts)
         title = self.font_title.render("Wireless GA Optimizer", True, COLOR_ACCENT)
         self.screen.blit(title, (820, 15))
         
@@ -499,31 +540,44 @@ class PygameApp:
         txt_status = self.font_header.render(status_text, True, status_color)
         self.screen.blit(txt_status, (1100, 75))
         
-        # 3. Play / Action Buttons
+        # 3. Play / Action Buttons with hover highlighting border
         play_btn_color = COLOR_ORANGE if self.is_running else COLOR_GREEN
         play_btn_lbl = "Pause (Space)" if self.is_running else "Play (Space)"
         pygame.draw.rect(self.screen, play_btn_color, self.btn_play, border_radius=6)
         lbl_play = self.font_header.render(play_btn_lbl, True, COLOR_WHITE)
         self.screen.blit(lbl_play, (self.btn_play.centerx - lbl_play.get_width()//2, self.btn_play.centery - lbl_play.get_height()//2))
+        if self.btn_play.collidepoint(mouse_pos):
+            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_play, 1.5, border_radius=6)
         
         pygame.draw.rect(self.screen, COLOR_PANEL_BG, self.btn_step, border_radius=6)
         pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, self.btn_step, 1, border_radius=6)
         lbl_step = self.font_header.render("Step 1 (S)", True, COLOR_TEXT)
         self.screen.blit(lbl_step, (self.btn_step.centerx - lbl_step.get_width()//2, self.btn_step.centery - lbl_step.get_height()//2))
+        if self.btn_step.collidepoint(mouse_pos):
+            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_step, 1.5, border_radius=6)
         
         pygame.draw.rect(self.screen, COLOR_PANEL_BG, self.btn_step10, border_radius=6)
         pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, self.btn_step10, 1, border_radius=6)
         lbl_step10 = self.font_header.render("Step 10", True, COLOR_TEXT)
         self.screen.blit(lbl_step10, (self.btn_step10.centerx - lbl_step10.get_width()//2, self.btn_step10.centery - lbl_step10.get_height()//2))
+        if self.btn_step10.collidepoint(mouse_pos):
+            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_step10, 1.5, border_radius=6)
         
+        # Reset AP Positions (restarts search, keeps nodes)
         pygame.draw.rect(self.screen, COLOR_RED, self.btn_reset_ga, border_radius=6)
         lbl_reset_ga = self.font_header.render("Reset APs (R)", True, COLOR_WHITE)
         self.screen.blit(lbl_reset_ga, (self.btn_reset_ga.centerx - lbl_reset_ga.get_width()//2, self.btn_reset_ga.centery - lbl_reset_ga.get_height()//2))
+        if self.btn_reset_ga.collidepoint(mouse_pos):
+            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_reset_ga, 1.5, border_radius=6)
         
+        # Rotate Nodes (new random device layout, seed increment)
         pygame.draw.rect(self.screen, COLOR_CHART_AVG, self.btn_rotate_nodes, border_radius=6)
         lbl_rot = self.font_header.render("New Devices (N)", True, COLOR_WHITE)
         self.screen.blit(lbl_rot, (self.btn_rotate_nodes.centerx - lbl_rot.get_width()//2, self.btn_rotate_nodes.centery - lbl_rot.get_height()//2))
+        if self.btn_rotate_nodes.collidepoint(mouse_pos):
+            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_rotate_nodes, 1.5, border_radius=6)
         
+        # Apply Tgt Configurations
         apply_btn_color = COLOR_ORANGE if reset_needed else COLOR_PANEL_BG
         apply_text_color = COLOR_WHITE if reset_needed else COLOR_TEXT
         pygame.draw.rect(self.screen, apply_btn_color, self.btn_apply_tgt, border_radius=6)
@@ -531,7 +585,10 @@ class PygameApp:
             pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, self.btn_apply_tgt, 1, border_radius=6)
         lbl_apply = self.font_header.render("Apply Settings (A)", True, apply_text_color)
         self.screen.blit(lbl_apply, (self.btn_apply_tgt.centerx - lbl_apply.get_width()//2, self.btn_apply_tgt.centery - lbl_apply.get_height()//2))
+        if self.btn_apply_tgt.collidepoint(mouse_pos):
+            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_apply_tgt, 1.5, border_radius=6)
         
+        # Display warning label if apply settings is pending
         if reset_needed:
             lbl_warn = self.font_subtitle.render("* Target settings changed. Click Apply Settings.", True, COLOR_YELLOW)
             self.screen.blit(lbl_warn, (820, 196))
@@ -577,32 +634,49 @@ class PygameApp:
             pygame.draw.rect(self.screen, val_bg_color, adj["rect_val"], border_radius=4)
             if is_active:
                 pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, adj["rect_val"], 1, border_radius=4)
+            elif adj["rect_val"].collidepoint(mouse_pos):
+                pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, adj["rect_val"], 1, border_radius=4)
                 
-            # Text rendering
+            # Text rendering (supports greyed out placeholder text)
             if is_active:
                 cursor = "|" if int(time.time() * 2) % 2 == 0 else " "
-                disp_val = self.input_text + cursor
+                if self.input_text == "":
+                    # Draw placeholder text in muted grey
+                    disp_val = self.placeholder_text
+                    disp_color = COLOR_TEXT_MUTED
+                else:
+                    disp_val = self.input_text
+                    disp_color = COLOR_ACCENT
+                lbl_val = self.font_mono.render(disp_val + cursor, True, disp_color)
             else:
                 disp_val = adj["fmt"](val)
+                lbl_val = self.font_mono.render(disp_val, True, COLOR_TEXT)
                 
-            lbl_val = self.font_mono.render(disp_val, True, COLOR_ACCENT if is_active else COLOR_TEXT)
             self.screen.blit(lbl_val, (adj["rect_val"].x + 5, y_pos + 2))
             
             if adj["type"] == "slider":
+                # Minus
                 pygame.draw.rect(self.screen, COLOR_PANEL_BG, adj["rect_minus"], border_radius=4)
                 pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, adj["rect_minus"], 1, border_radius=4)
                 lbl_minus = self.font_body.render("-", True, COLOR_TEXT)
                 self.screen.blit(lbl_minus, (adj["rect_minus"].centerx - lbl_minus.get_width()//2, adj["rect_minus"].centery - lbl_minus.get_height()//2 - 2))
+                if adj["rect_minus"].collidepoint(mouse_pos):
+                    pygame.draw.rect(self.screen, COLOR_WHITE, adj["rect_minus"], 1, border_radius=4)
                 
+                # Plus
                 pygame.draw.rect(self.screen, COLOR_PANEL_BG, adj["rect_plus"], border_radius=4)
                 pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, adj["rect_plus"], 1, border_radius=4)
                 lbl_plus = self.font_body.render("+", True, COLOR_TEXT)
                 self.screen.blit(lbl_plus, (adj["rect_plus"].centerx - lbl_plus.get_width()//2, adj["rect_plus"].centery - lbl_plus.get_height()//2 - 1))
+                if adj["rect_plus"].collidepoint(mouse_pos):
+                    pygame.draw.rect(self.screen, COLOR_WHITE, adj["rect_plus"], 1, border_radius=4)
             else: # toggle
                 toggle_btn_color = COLOR_GREEN if val else COLOR_RED
                 pygame.draw.rect(self.screen, toggle_btn_color, adj["rect_toggle"], border_radius=4)
                 lbl_toggle = self.font_body.render("Toggle", True, COLOR_WHITE)
                 self.screen.blit(lbl_toggle, (adj["rect_toggle"].centerx - lbl_toggle.get_width()//2, adj["rect_toggle"].centery - lbl_toggle.get_height()//2 - 1))
+                if adj["rect_toggle"].collidepoint(mouse_pos):
+                    pygame.draw.rect(self.screen, COLOR_WHITE, adj["rect_toggle"], 1, border_radius=4)
             
         # 5. Model Cost Breakdown (Dynamic position)
         breakdown_y = adjust_start_y + len(self.adjusters) * 23 + 3
@@ -655,7 +729,7 @@ class PygameApp:
             if percentage > 0:
                 pygame.draw.rect(self.screen, bar_color, (x_bar, y_bar + 13, int(bar_width * percentage), bar_height), border_radius=2)
 
-        # 7. Mini Cost History Graph
+        # 7. Mini Cost History Graph with Guide Line
         chart_line_y = 720
         pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (820, chart_line_y), (1180, chart_line_y), 1)
         
@@ -685,6 +759,10 @@ class PygameApp:
                 pts_best.append((px, py_best))
                 pts_avg.append((px, py_avg))
                 
+            # Draw mid guide line (median line)
+            mid_y = chart_y + chart_h // 2
+            pygame.draw.line(self.screen, (40, 50, 70), (chart_x + 5, mid_y), (chart_x + chart_w - 5, mid_y), 1)
+            
             pygame.draw.lines(self.screen, COLOR_CHART_AVG, False, pts_avg, 1)
             pygame.draw.lines(self.screen, COLOR_ACCENT, False, pts_best, 2)
             
