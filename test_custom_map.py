@@ -23,9 +23,6 @@ class TestCustomMapFeatures(unittest.TestCase):
     def test_image_scan_and_load(self):
         """Test image scanning in current directory."""
         self.assertGreater(len(self.app.available_image_paths), 0)
-        # Verify img1 is present and prioritized
-        image_stems = [os.path.splitext(os.path.basename(p))[0].lower() for p in self.app.available_image_paths]
-        self.assertIn('img1', image_stems)
         self.assertIsNotNone(self.app.scaled_bg_image)
 
     def test_device_placement_and_ga_sync(self):

@@ -51,17 +51,17 @@ class PygameApp:
         pygame.init()
         pygame.font.init()
         
-        # Display setup - Start fullscreen by default
+        # Display setup - Store native desktop resolution prior to window creation
         info = pygame.display.Info()
-        desktop_w = info.current_w if info.current_w > 0 else 1280
-        desktop_h = info.current_h if info.current_h > 0 else 800
+        self.desktop_w = info.current_w if info.current_w > 0 else 1920
+        self.desktop_h = info.current_h if info.current_h > 0 else 1080
         
         self.fullscreen = True
         try:
-            self.screen = pygame.display.set_mode((desktop_w, desktop_h), pygame.FULLSCREEN | pygame.RESIZABLE)
+            self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN | pygame.RESIZABLE)
         except pygame.error:
-            self.screen = pygame.display.set_mode((1280, 800), pygame.RESIZABLE)
-            self.fullscreen = False
+            self.screen = pygame.display.set_mode((self.desktop_w, self.desktop_h), pygame.FULLSCREEN)
+            self.fullscreen = True
             
         pygame.display.set_caption("Wireless AP Genetic Algorithm Optimizer - Custom Map Mode")
         self.clock = pygame.time.Clock()
@@ -297,13 +297,15 @@ class PygameApp:
         return closest_dev
 
     def toggle_fullscreen(self):
-        """Toggles display between fullscreen and windowed mode."""
+        """Toggles display between fullscreen and windowed mode reliably across Wayland and X11."""
         self.fullscreen = not self.fullscreen
         if self.fullscreen:
-            pygame.display.toggle_fullscreen()
+            try:
+                self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN | pygame.RESIZABLE)
+            except pygame.error:
+                self.screen = pygame.display.set_mode((self.desktop_w, self.desktop_h), pygame.FULLSCREEN)
         else:
-            info = pygame.display.Info()
-            pygame.display.set_mode((1280, 800), pygame.RESIZABLE)
+            self.screen = pygame.display.set_mode((1280, 800), pygame.RESIZABLE)
         self.update_layout()
 
     def run(self):
