@@ -281,3 +281,14 @@ class GeneticAlgorithm:
         if self.best_history:
             self.best_history[-1] = self.population[0].total_cost
             self.avg_history[-1] = sum(ind.total_cost for ind in self.population) / len(self.population)
+
+    def set_devices(self, devices: List[Device]):
+        """Updates the device list and re-evaluates the population."""
+        self.devices = devices
+        for ind in self.population:
+            self.evaluate_individual(ind)
+        self.sort_population()
+        if self.best_history:
+            self.best_history[-1] = self.population[0].total_cost
+            self.avg_history[-1] = sum(ind.total_cost for ind in self.population) / len(self.population)
+
