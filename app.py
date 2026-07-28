@@ -388,16 +388,16 @@ class PygameApp:
                 break
                 
         if not hovering_button:
-            for adj in self.adjusters:
-                if adj["rect_val"].collidepoint(pos):
+            for adj in self.get_visible_adjusters():
+                if "rect_val" in adj and adj["rect_val"].collidepoint(pos):
                     hovering_button = True
                     break
                 if adj["type"] == "slider":
-                    if adj["rect_minus"].collidepoint(pos) or adj["rect_plus"].collidepoint(pos):
+                    if "rect_minus" in adj and (adj["rect_minus"].collidepoint(pos) or adj["rect_plus"].collidepoint(pos)):
                         hovering_button = True
                         break
                 elif adj["type"] == "toggle":
-                    if adj["rect_toggle"].collidepoint(pos):
+                    if "rect_toggle" in adj and adj["rect_toggle"].collidepoint(pos):
                         hovering_button = True
                         break
                         
