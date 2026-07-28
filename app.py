@@ -442,6 +442,40 @@ class PygameApp:
             return 0.5
         return 0.0
 
+    def set_ap_count_live(self, new_num_aps: int):
+        """Updates AP count dynamically on-the-fly without restarting or wiping GA progress."""
+        new_num_aps = max(1, min(20, int(new_num_aps)))
+        old_num_aps = self.ga.num_aps
+        self.target_num_aps = new_num_aps
+        
+        if new_num_aps == old_num_aps:
+            return
+            
+        self.ga.num_aps = new_num_aps
+        
+        # Calculate dynamic AP capacity
+        num_devices = len(self.devices)
+        dynamic_capacity = int(math.ceil(num_devices / new_num_aps)) if (num_devices > 0 and new_num_aps > 0) else 1
+        self.ga_config["ap_capacity"] = dynamic_capacity
+        self.ga.ap_capacity = dynamic_capacity
+        
+        # Adapt AP coordinates array for all individuals in current population
+        for ind in self.ga.population:
+            if new_num_aps > len(ind.aps):
+                for _ in range(new_num_aps - len(ind.aps)):
+                    rx = self.ga.rng.uniform(0, self.ga.grid_size)
+                    ry = self.ga.rng.uniform(0, self.ga.grid_size)
+                    ind.aps.append((rx, ry))
+            elif new_num_aps < len(ind.aps):
+                ind.aps = ind.aps[:new_num_aps]
+                
+        # Re-evaluate fitness for updated AP count
+        self.ga.evaluate_population(self.ga.population)
+        self.ga.sort_population()
+        if self.ga.best_history:
+            self.ga.best_history[-1] = self.ga.population[0].total_cost
+            self.ga.avg_history[-1] = sum(ind.total_cost for ind in self.ga.population) / len(self.ga.population)
+
     def apply_input_value(self):
         if not self.active_input_key:
             return
@@ -465,7 +499,7 @@ class PygameApp:
             elif key == "nodes":
                 self.target_num_nodes = int(val)
             elif key == "aps":
-                self.target_num_aps = int(val)
+                self.set_ap_count_live(int(val))
             else:
                 self.update_param(key, val)
                 
@@ -676,7 +710,7 @@ class PygameApp:
                                     elif key == "nodes":
                                         self.target_num_nodes = int(new_val)
                                     elif key == "aps":
-                                        self.target_num_aps = int(new_val)
+                                        self.set_ap_count_live(int(new_val))
                                     else:
                                         self.update_param(key, new_val)
                                 elif adj["rect_plus"].collidepoint(pos):
@@ -686,7 +720,7 @@ class PygameApp:
                                     elif key == "nodes":
                                         self.target_num_nodes = int(new_val)
                                     elif key == "aps":
-                                        self.target_num_aps = int(new_val)
+                                        self.set_ap_count_live(int(new_val))
                                     else:
                                         self.update_param(key, new_val)
 
