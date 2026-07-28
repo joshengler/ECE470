@@ -110,8 +110,8 @@ class PygameApp:
         # Target parameters for runtime configuration
         self.target_grid_size = DEFAULT_GRID_SIZE
         self.target_num_aps = DEFAULT_NUM_APS
-        self.show_links = True
-        self.throttle_speed = True
+        self.show_links = False
+        self.throttle_speed = False
         
         # Textbox Input variables
         self.active_input_key = None
@@ -174,16 +174,16 @@ class PygameApp:
         self.sidebar_width = max(380, self.screen_width - self.grid_size_px)
         self.rect_sidebar = pygame.Rect(self.grid_size_px, 0, self.sidebar_width, self.screen_height)
         
-        # Dynamic font scaling factor (scales fonts only when extra space is available)
+        # Dynamic font scaling factor (scales fonts up to 3x when extra space is available)
         width_ratio = self.sidebar_width / 380.0
-        height_ratio = self.screen_height / 800.0
-        self.font_scale = max(1.0, min(1.5, min(width_ratio, height_ratio)))
+        height_ratio = self.screen_height / 750.0
+        self.font_scale = max(1.0, min(3, min(width_ratio, height_ratio)))
         
-        # Reload fonts dynamically with scaled sizes
-        f_title_sz = int(21 * self.font_scale)
-        f_hdr_sz = int(14 * self.font_scale)
-        f_body_sz = int(11 * self.font_scale)
-        f_mono_sz = int(11 * self.font_scale)
+        # Reload fonts dynamically with larger scaled sizes
+        f_title_sz = int(22 * self.font_scale)
+        f_hdr_sz = int(15 * self.font_scale)
+        f_body_sz = int(12 * self.font_scale)
+        f_mono_sz = int(12 * self.font_scale)
         
         self.font_title = pygame.font.SysFont("Trebuchet MS", f_title_sz, bold=True)
         self.font_subtitle = pygame.font.SysFont("Verdana", f_body_sz, italic=True)
@@ -199,12 +199,12 @@ class PygameApp:
         sb_x = self.rect_sidebar.x
         pad_x = 20
         avail_w = self.sidebar_width - 40
-        btn_h = int(26 * self.font_scale)
+        btn_h = int(28 * self.font_scale)
         
         btn_w_half = (avail_w - 10) // 2
         btn_w_third = (avail_w - 20) // 3
         
-        y_start = int(100 * self.font_scale)
+        y_start = int(90 * self.font_scale)
         spacing = btn_h + 6
         
         # Row 1: Mode & Image Controls
@@ -240,13 +240,13 @@ class PygameApp:
         avail_w = self.sidebar_width - 40
         reset_needed = self.is_reset_required()
         
-        btn_h = int(26 * self.font_scale)
-        y4 = int(100 * self.font_scale) + (btn_h + 6) * 3
-        start_y = y4 + btn_h + int((28 if not reset_needed else 40) * self.font_scale)
+        btn_h = int(28 * self.font_scale)
+        y4 = int(90 * self.font_scale) + (btn_h + 6) * 3
+        start_y = y4 + btn_h + int((26 if not reset_needed else 38) * self.font_scale)
         
-        row_h = int(22 * self.font_scale)
-        lbl_w = min(int(160 * self.font_scale), avail_w // 2)
-        btn_pm_w = int(35 * self.font_scale)
+        row_h = int(24 * self.font_scale)
+        lbl_w = min(int(175 * self.font_scale), avail_w // 2)
+        btn_pm_w = int(38 * self.font_scale)
         val_w = max(90, avail_w - lbl_w - btn_pm_w * 2 - 15)
         
         for idx, adj in enumerate(self.adjusters):
@@ -469,18 +469,23 @@ class PygameApp:
         self.active_input_key = None
 
     def perform_apply_and_reset(self, new_seed: bool = False):
-        """Regenerates devices and initializes a new GA using target values."""
+        """Re-initializes GA using target values, preserving user-placed devices in CUSTOM_MAP mode."""
         self.is_running = False
         if new_seed:
             self.current_seed += 1
             
-        self.devices = generate_devices(
-            num_devices=self.target_num_nodes,
-            grid_size=self.target_grid_size,
-            seed=self.current_seed
-        )
-        
-        dynamic_capacity = int(math.ceil(self.target_num_nodes / self.target_num_aps)) if self.target_num_aps > 0 else 1
+        if self.mode == "GA" or (new_seed and self.mode == "CUSTOM_MAP"):
+            self.devices = generate_devices(
+                num_devices=self.target_num_nodes,
+                grid_size=self.target_grid_size,
+                seed=self.current_seed
+            )
+        else:
+            # In CUSTOM_MAP mode when applying settings, preserve existing user-placed devices
+            self.target_num_nodes = len(self.devices)
+            
+        num_devices = len(self.devices)
+        dynamic_capacity = int(math.ceil(num_devices / self.target_num_aps)) if (num_devices > 0 and self.target_num_aps > 0) else 1
         self.ga_config["ap_capacity"] = dynamic_capacity
         
         self.ga = GeneticAlgorithm(
@@ -809,24 +814,32 @@ class PygameApp:
             lbl = self.font_mono.render(str(idx + 1), True, COLOR_WHITE)
             self.screen.blit(lbl, (cx - lbl.get_width()//2, cy - 25))
 
-        # 8. Map Mode Banner & Placement Guidance
-        banner_x = self.grid_offset_x + 10
-        banner_y = self.grid_offset_y + 10
-        banner_surface = pygame.Surface((380, 48), pygame.SRCALPHA)
-        banner_surface.fill((15, 23, 42, 220))
-        self.screen.blit(banner_surface, (banner_x, banner_y))
-        pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, (banner_x, banner_y, 380, 48), 1, border_radius=4)
-        
-        mode_txt = "CUSTOM MAP MODE" if self.mode == "CUSTOM_MAP" else "STANDARD GA GRID MODE"
+        # 8. Map Placement Guidance Banner
         img_name = os.path.basename(self.available_image_paths[self.current_image_idx]) if self.available_image_paths else "No Image"
         
-        t_mode = self.font_header.render(f"Mode: {mode_txt}", True, COLOR_ACCENT)
         t_img = self.font_subtitle.render(f"Map Image: {img_name} | Devices: {len(self.devices)}", True, COLOR_TEXT_MUTED)
-        t_hint = self.font_subtitle.render("Left-Click: Add/Drag Device | Right-Click: Remove | ESC: Fullscreen", True, COLOR_YELLOW)
+        t_hint = self.font_subtitle.render("Left-Click: Add/Drag Device | Right-Click: Remove", True, COLOR_YELLOW)
         
-        self.screen.blit(t_mode, (banner_x + 8, banner_y + 4))
-        self.screen.blit(t_img, (banner_x + 8, banner_y + 18))
-        self.screen.blit(t_hint, (banner_x + 8, banner_y + 32))
+        pad_b = 10
+        calc_w = max(t_img.get_width(), t_hint.get_width()) + pad_b * 2
+        b_w = max(380, min(calc_w, self.grid_size_px - 20))
+        
+        lh2 = t_img.get_height()
+        lh3 = t_hint.get_height()
+        b_h = lh2 + lh3 + pad_b * 2
+        
+        banner_x = self.grid_offset_x + 10
+        banner_y = self.grid_offset_y + 10
+        banner_surface = pygame.Surface((b_w, b_h), pygame.SRCALPHA)
+        banner_surface.fill((15, 23, 42, 220))
+        self.screen.blit(banner_surface, (banner_x, banner_y))
+        pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, (banner_x, banner_y, b_w, b_h), 1, border_radius=4)
+        
+        y_pos1 = banner_y + pad_b
+        y_pos2 = y_pos1 + lh2 + 2
+        
+        self.screen.blit(t_img, (banner_x + pad_b, y_pos1))
+        self.screen.blit(t_hint, (banner_x + pad_b, y_pos2))
 
     def draw_sidebar_panel(self):
         sb_x = self.rect_sidebar.x
@@ -866,7 +879,7 @@ class PygameApp:
         self.screen.blit(txt_status, (right_edge - txt_status.get_width(), line_y1 + 10))
         
         # 3. Action Buttons Rendering
-        mode_btn_lbl = "Mode: Custom Map" if self.mode == "CUSTOM_MAP" else "Mode: GA Grid"
+        mode_btn_lbl = "Mode: User defined" if self.mode == "CUSTOM_MAP" else "Mode: Auto Generate"
         mode_btn_color = COLOR_ACCENT if self.mode == "CUSTOM_MAP" else COLOR_PANEL_BG
         pygame.draw.rect(self.screen, mode_btn_color, self.btn_mode, border_radius=6)
         lbl_m = self.font_header.render(mode_btn_lbl, True, COLOR_WHITE if self.mode == "CUSTOM_MAP" else COLOR_TEXT)
@@ -881,9 +894,9 @@ class PygameApp:
         if self.btn_next_image.collidepoint(mouse_pos):
             pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_next_image, 2, border_radius=6)
             
-        # Play / Step / Step 10 Buttons
+        # Optimize / Step / Step 10 Buttons
         play_btn_color = COLOR_ORANGE if self.is_running else COLOR_GREEN
-        play_btn_lbl = "Pause" if self.is_running else "Play"
+        play_btn_lbl = "Pause" if self.is_running else "Optimize"
         pygame.draw.rect(self.screen, play_btn_color, self.btn_play, border_radius=6)
         lbl_play = self.font_header.render(play_btn_lbl, True, COLOR_WHITE)
         self.screen.blit(lbl_play, (self.btn_play.centerx - lbl_play.get_width()//2, self.btn_play.centery - lbl_play.get_height()//2))

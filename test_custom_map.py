@@ -66,5 +66,26 @@ class TestCustomMapFeatures(unittest.TestCase):
         self.assertEqual(sx, 300)
         self.assertEqual(sy, 600)
 
+    def test_ap_count_change_preserves_custom_devices(self):
+        """Verify that applying new AP count in CUSTOM_MAP mode preserves user placed devices."""
+        # Add 3 custom devices
+        self.app.devices = [
+            Device(id=0, x=10.0, y=10.0),
+            Device(id=1, x=20.0, y=20.0),
+            Device(id=2, x=30.0, y=30.0)
+        ]
+        self.app.ga.set_devices(self.app.devices)
+        
+        # Change target AP count from 3 to 5
+        self.app.target_num_aps = 5
+        self.app.perform_apply_and_reset(new_seed=False)
+        
+        # Verify custom devices are unchanged
+        self.assertEqual(len(self.app.devices), 3)
+        self.assertEqual(self.app.devices[0].x, 10.0)
+        self.assertEqual(self.app.devices[1].x, 20.0)
+        self.assertEqual(self.app.devices[2].x, 30.0)
+        self.assertEqual(self.app.ga.num_aps, 5)
+
 if __name__ == '__main__':
     unittest.main()

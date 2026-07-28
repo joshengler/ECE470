@@ -1,5 +1,7 @@
 import random
 import math
+import os
+import concurrent.futures
 from dataclasses import dataclass, field
 from typing import List, Tuple, Dict, Any
 
@@ -22,6 +24,49 @@ class Individual:
     device_assignments: List[int] = field(default_factory=list)
     # AP loads: number of devices connected to each AP (length = number of APs)
     ap_loads: List[int] = field(default_factory=list)
+
+def _eval_single_individual_worker(args: Tuple) -> Tuple[float, float, float, float, List[int], List[int]]:
+    aps, devices, num_aps, ap_radius, ap_capacity, power_weight, overlap_weight, capacity_weight, power_exponent = args
+    
+    # 1. Device assignment & Power Consumption Cost
+    power_cost = 0.0
+    device_assignments = []
+    ap_loads = [0] * num_aps
+    
+    for device in devices:
+        min_dist = float('inf')
+        best_ap = 0
+        for ap_idx, ap in enumerate(aps):
+            dist = math.hypot(device.x - ap[0], device.y - ap[1])
+            if dist < min_dist:
+                min_dist = dist
+                best_ap = ap_idx
+        
+        device_assignments.append(best_ap)
+        ap_loads[best_ap] += 1
+        power_cost += min_dist ** power_exponent
+        
+    # 2. Access Point Overlap Cost
+    overlap_cost = 0.0
+    for i in range(num_aps):
+        for j in range(i + 1, num_aps):
+            dist = math.hypot(aps[i][0] - aps[j][0], aps[i][1] - aps[j][1])
+            overlap_distance = max(0.0, 2.0 * ap_radius - dist)
+            overlap_cost += overlap_distance ** 2
+
+    # 3. Capacity Cost
+    capacity_cost = 0.0
+    for load in ap_loads:
+        oversubscription = max(0, load - ap_capacity)
+        capacity_cost += oversubscription ** 2
+
+    total_cost = (
+        power_weight * power_cost +
+        overlap_weight * overlap_cost +
+        capacity_weight * capacity_cost
+    )
+    
+    return (total_cost, power_cost, overlap_cost, capacity_cost, device_assignments, ap_loads)
 
 def generate_devices(num_devices: int = 100, grid_size: int = 100, seed: int = 42) -> List[Device]:
     """
@@ -75,8 +120,12 @@ class GeneticAlgorithm:
         self.best_history: List[float] = []
         self.avg_history: List[float] = []
         
-        # Internal random generator for GA operations (independent of device generation seed)
+        # Internal random generator for GA operations
         self.rng = random.Random()
+        
+        # Multiprocessing CPU Pool Executor
+        self.num_workers = max(1, os.cpu_count() or 4)
+        self.executor = concurrent.futures.ProcessPoolExecutor(max_workers=self.num_workers)
         
         self.initialize_population()
 
@@ -90,69 +139,73 @@ class GeneticAlgorithm:
                 y = self.rng.uniform(0, self.grid_size)
                 aps.append((x, y))
             ind = Individual(aps=aps)
-            self.evaluate_individual(ind)
             self.population.append(ind)
+        self.evaluate_population(self.population)
         self.generation = 0
         self.best_history = []
         self.avg_history = []
         self.sort_population()
         self.record_stats()
 
+    def evaluate_population(self, inds: List[Individual]):
+        """Evaluates multiple individuals in parallel using all available CPU cores."""
+        if not inds:
+            return
+        if self.num_workers > 1 and len(inds) >= 4:
+            tasks = [
+                (
+                    ind.aps,
+                    self.devices,
+                    self.num_aps,
+                    self.ap_radius,
+                    self.ap_capacity,
+                    self.power_weight,
+                    self.overlap_weight,
+                    self.capacity_weight,
+                    self.power_exponent
+                )
+                for ind in inds
+            ]
+            chunk = max(1, len(inds) // (self.num_workers * 2))
+            try:
+                results = list(self.executor.map(_eval_single_individual_worker, tasks, chunksize=chunk))
+                for ind, res in zip(inds, results):
+                    (
+                        ind.total_cost,
+                        ind.power_cost,
+                        ind.overlap_cost,
+                        ind.capacity_cost,
+                        ind.device_assignments,
+                        ind.ap_loads
+                    ) = res
+            except Exception:
+                for ind in inds:
+                    self.evaluate_individual(ind)
+        else:
+            for ind in inds:
+                self.evaluate_individual(ind)
+
     def evaluate_individual(self, ind: Individual):
         """Calculates the fitness and individual costs for a single individual."""
-        # 1. Device assignment & Power Consumption Cost
-        power_cost = 0.0
-        device_assignments = []
-        ap_loads = [0] * self.num_aps
-        
-        for device in self.devices:
-            min_dist = float('inf')
-            best_ap = 0
-            for ap_idx, ap in enumerate(ind.aps):
-                dist = math.hypot(device.x - ap[0], device.y - ap[1])
-                if dist < min_dist:
-                    min_dist = dist
-                    best_ap = ap_idx
-            
-            # Record assignment
-            device_assignments.append(best_ap)
-            ap_loads[best_ap] += 1
-            
-            # Power consumption is proportional to distance^exponent
-            power_cost += min_dist ** self.power_exponent
-            
-        # 2. Access Point Overlap Cost
-        overlap_cost = 0.0
-        # Check all unique pairs of access points
-        for i in range(self.num_aps):
-            for j in range(i + 1, self.num_aps):
-                dist = math.hypot(ind.aps[i][0] - ind.aps[j][0], ind.aps[i][1] - ind.aps[j][1])
-                # Overlap occurs if distance is less than 2 * radius
-                overlap_distance = max(0.0, 2.0 * self.ap_radius - dist)
-                # Penalty is squared to encourage separation
-                overlap_cost += overlap_distance ** 2
-
-        # 3. Capacity Cost
-        capacity_cost = 0.0
-        for load in ap_loads:
-            oversubscription = max(0, load - self.ap_capacity)
-            # Penalty is squared to heavily penalize single AP overloading
-            capacity_cost += oversubscription ** 2
-
-        # Total cost calculation
-        total_cost = (
-            self.power_weight * power_cost +
-            self.overlap_weight * overlap_cost +
-            self.capacity_weight * capacity_cost
-        )
-        
-        # Cache results in individual
-        ind.total_cost = total_cost
-        ind.power_cost = power_cost
-        ind.overlap_cost = overlap_cost
-        ind.capacity_cost = capacity_cost
-        ind.device_assignments = device_assignments
-        ind.ap_loads = ap_loads
+        res = _eval_single_individual_worker((
+            ind.aps,
+            self.devices,
+            self.num_aps,
+            self.ap_radius,
+            self.ap_capacity,
+            self.power_weight,
+            self.overlap_weight,
+            self.capacity_weight,
+            self.power_exponent
+        ))
+        (
+            ind.total_cost,
+            ind.power_cost,
+            ind.overlap_cost,
+            ind.capacity_cost,
+            ind.device_assignments,
+            ind.ap_loads
+        ) = res
 
     def sort_population(self):
         """Sorts the population in place by total cost (ascending - lower cost is better)."""
@@ -194,17 +247,13 @@ class GeneticAlgorithm:
         new_aps = []
         for ap in individual.aps:
             if self.rng.random() < self.mutation_rate:
-                # With small probability, completely reset the AP (global exploration)
                 if self.rng.random() < 0.1:
                     x = self.rng.uniform(0, self.grid_size)
                     y = self.rng.uniform(0, self.grid_size)
                 else:
-                    # Otherwise, perturb slightly with Gaussian noise (local exploitation)
-                    # Mutation step size standard deviation is 5% of grid size
                     std_dev = self.grid_size * 0.05
                     x = self.rng.gauss(ap[0], std_dev)
                     y = self.rng.gauss(ap[1], std_dev)
-                    # Clamp coordinates to grid boundary
                     x = max(0.0, min(self.grid_size, x))
                     y = max(0.0, min(self.grid_size, y))
                 new_aps.append((x, y))
@@ -213,15 +262,13 @@ class GeneticAlgorithm:
         individual.aps = new_aps
 
     def step(self):
-        """Executes one generation step of the Genetic Algorithm."""
+        """Executes one generation step of the Genetic Algorithm in parallel."""
         new_pop: List[Individual] = []
         
         # 1. Elitism: Keep the best individuals unchanged
         for i in range(self.elitism_count):
             if i < len(self.population):
-                # Copy the individual structure, evaluate to refresh weights if they changed
                 elite = Individual(aps=list(self.population[i].aps))
-                self.evaluate_individual(elite)
                 new_pop.append(elite)
                 
         # 2. Reproduction, Crossover, and Mutation
@@ -234,13 +281,12 @@ class GeneticAlgorithm:
             self.mutate(child1)
             self.mutate(child2)
             
-            self.evaluate_individual(child1)
-            self.evaluate_individual(child2)
-            
             new_pop.append(child1)
             if len(new_pop) < self.pop_size:
                 new_pop.append(child2)
                 
+        # Evaluate new population in parallel across all CPU cores
+        self.evaluate_population(new_pop)
         self.population = new_pop
         self.sort_population()
         self.generation += 1
@@ -273,11 +319,8 @@ class GeneticAlgorithm:
         if 'power_exponent' in config:
             self.power_exponent = float(config['power_exponent'])
             
-        # Re-evaluate all individuals with the new parameters
-        for ind in self.population:
-            self.evaluate_individual(ind)
+        self.evaluate_population(self.population)
         self.sort_population()
-        # Correct the last recorded best/average history to match the updated parameters
         if self.best_history:
             self.best_history[-1] = self.population[0].total_cost
             self.avg_history[-1] = sum(ind.total_cost for ind in self.population) / len(self.population)
@@ -285,8 +328,7 @@ class GeneticAlgorithm:
     def set_devices(self, devices: List[Device], sort: bool = False):
         """Updates the device list and re-evaluates the population without reshuffling unless sort=True."""
         self.devices = devices
-        for ind in self.population:
-            self.evaluate_individual(ind)
+        self.evaluate_population(self.population)
         if sort:
             self.sort_population()
         if self.best_history:
