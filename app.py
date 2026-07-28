@@ -157,19 +157,39 @@ class PygameApp:
         self.reposition_controls()
 
     def update_layout(self):
-        """Calculates dynamic screen layout rects for map viewport and sidebar with 1:1 uniform grid scaling."""
+        """Calculates dynamic layout rects, expanding sidebar and scaling fonts when extra space is available."""
         self.screen_width, self.screen_height = self.screen.get_size()
-        container_w = max(100, self.screen_width - self.sidebar_width)
         container_h = self.screen_height
         
-        # Enforce 1:1 square aspect ratio for grid independent of screen size
-        self.grid_size_px = min(container_w, container_h)
-        self.grid_offset_x = (container_w - self.grid_size_px) // 2
+        # Grid is a 1:1 aspect ratio square bounded by height and screen width minus minimum sidebar (380px)
+        max_grid_w = max(100, self.screen_width - 380)
+        self.grid_size_px = min(max_grid_w, container_h)
+        self.grid_offset_x = 0
         self.grid_offset_y = (container_h - self.grid_size_px) // 2
         
-        self.rect_grid_container = pygame.Rect(0, 0, container_w, container_h)
-        self.rect_grid = pygame.Rect(self.grid_offset_x, self.grid_offset_y, self.grid_size_px, self.grid_size_px)
-        self.rect_sidebar = pygame.Rect(container_w, 0, self.sidebar_width, self.screen_height)
+        self.rect_grid_container = pygame.Rect(0, 0, self.grid_size_px, container_h)
+        self.rect_grid = pygame.Rect(0, self.grid_offset_y, self.grid_size_px, self.grid_size_px)
+        
+        # Sidebar expands to take up ALL remaining horizontal space on the right (min 380px)
+        self.sidebar_width = max(380, self.screen_width - self.grid_size_px)
+        self.rect_sidebar = pygame.Rect(self.grid_size_px, 0, self.sidebar_width, self.screen_height)
+        
+        # Dynamic font scaling factor (scales fonts only when extra space is available)
+        width_ratio = self.sidebar_width / 380.0
+        height_ratio = self.screen_height / 800.0
+        self.font_scale = max(1.0, min(1.5, min(width_ratio, height_ratio)))
+        
+        # Reload fonts dynamically with scaled sizes
+        f_title_sz = int(21 * self.font_scale)
+        f_hdr_sz = int(14 * self.font_scale)
+        f_body_sz = int(11 * self.font_scale)
+        f_mono_sz = int(11 * self.font_scale)
+        
+        self.font_title = pygame.font.SysFont("Trebuchet MS", f_title_sz, bold=True)
+        self.font_subtitle = pygame.font.SysFont("Verdana", f_body_sz, italic=True)
+        self.font_header = pygame.font.SysFont("Trebuchet MS", f_hdr_sz, bold=True)
+        self.font_body = pygame.font.SysFont("Verdana", f_body_sz)
+        self.font_mono = pygame.font.SysFont("Courier New", f_mono_sz, bold=True)
         
         # Scale factor (pixels per grid unit)
         grid_size = float(self.ga.grid_size) if hasattr(self, 'ga') else 100.0
@@ -177,23 +197,35 @@ class PygameApp:
         
         # Dynamic Sidebar Action Buttons
         sb_x = self.rect_sidebar.x
+        pad_x = 20
+        avail_w = self.sidebar_width - 40
+        btn_h = int(26 * self.font_scale)
+        
+        btn_w_half = (avail_w - 10) // 2
+        btn_w_third = (avail_w - 20) // 3
+        
+        y_start = int(100 * self.font_scale)
+        spacing = btn_h + 6
         
         # Row 1: Mode & Image Controls
-        self.btn_mode = pygame.Rect(sb_x + 20, 100, 175, 26)
-        self.btn_next_image = pygame.Rect(sb_x + 205, 100, 175, 26)
+        self.btn_mode = pygame.Rect(sb_x + pad_x, y_start, btn_w_half, btn_h)
+        self.btn_next_image = pygame.Rect(sb_x + pad_x + btn_w_half + 10, y_start, btn_w_half, btn_h)
         
         # Row 2: Play & Step Actions
-        self.btn_play = pygame.Rect(sb_x + 20, 132, 115, 26)
-        self.btn_step = pygame.Rect(sb_x + 142, 132, 115, 26)
-        self.btn_step10 = pygame.Rect(sb_x + 265, 132, 115, 26)
+        y2 = y_start + spacing
+        self.btn_play = pygame.Rect(sb_x + pad_x, y2, btn_w_third, btn_h)
+        self.btn_step = pygame.Rect(sb_x + pad_x + btn_w_third + 10, y2, btn_w_third, btn_h)
+        self.btn_step10 = pygame.Rect(sb_x + pad_x + (btn_w_third + 10)*2, y2, btn_w_third, btn_h)
         
         # Row 3: GA Reset, Device Edit Actions
-        self.btn_reset_ga = pygame.Rect(sb_x + 20, 164, 115, 26)
-        self.btn_clear_devices = pygame.Rect(sb_x + 142, 164, 115, 26)
-        self.btn_rotate_nodes = pygame.Rect(sb_x + 265, 164, 115, 26)
+        y3 = y2 + spacing
+        self.btn_reset_ga = pygame.Rect(sb_x + pad_x, y3, btn_w_third, btn_h)
+        self.btn_clear_devices = pygame.Rect(sb_x + pad_x + btn_w_third + 10, y3, btn_w_third, btn_h)
+        self.btn_rotate_nodes = pygame.Rect(sb_x + pad_x + (btn_w_third + 10)*2, y3, btn_w_third, btn_h)
         
         # Apply Settings button
-        self.btn_apply_tgt = pygame.Rect(sb_x + 20, 196, 360, 26)
+        y4 = y3 + spacing
+        self.btn_apply_tgt = pygame.Rect(sb_x + pad_x, y4, avail_w, btn_h)
         
         # Scale background image if loaded
         self.scale_background_image()
@@ -202,19 +234,29 @@ class PygameApp:
             self.reposition_controls()
 
     def reposition_controls(self):
-        """Positions parameter adjusters inside sidebar."""
+        """Positions parameter adjusters inside sidebar with dynamic widths and spacing."""
         sb_x = self.rect_sidebar.x
+        pad_x = 20
+        avail_w = self.sidebar_width - 40
         reset_needed = self.is_reset_required()
-        start_y = 250 if not reset_needed else 262
+        
+        btn_h = int(26 * self.font_scale)
+        y4 = int(100 * self.font_scale) + (btn_h + 6) * 3
+        start_y = y4 + btn_h + int((28 if not reset_needed else 40) * self.font_scale)
+        
+        row_h = int(22 * self.font_scale)
+        lbl_w = min(int(160 * self.font_scale), avail_w // 2)
+        btn_pm_w = int(35 * self.font_scale)
+        val_w = max(90, avail_w - lbl_w - btn_pm_w * 2 - 15)
         
         for idx, adj in enumerate(self.adjusters):
-            y_pos = start_y + idx * 22
-            adj["rect_val"] = pygame.Rect(sb_x + 165, y_pos, 130, 18)
+            y_pos = start_y + idx * row_h
+            adj["rect_val"] = pygame.Rect(sb_x + pad_x + lbl_w, y_pos, val_w, row_h - 4)
             if adj["type"] == "slider":
-                adj["rect_minus"] = pygame.Rect(sb_x + 300, y_pos, 35, 18)
-                adj["rect_plus"] = pygame.Rect(sb_x + 340, y_pos, 35, 18)
+                adj["rect_minus"] = pygame.Rect(sb_x + pad_x + lbl_w + val_w + 5, y_pos, btn_pm_w, row_h - 4)
+                adj["rect_plus"] = pygame.Rect(sb_x + pad_x + lbl_w + val_w + 10 + btn_pm_w, y_pos, btn_pm_w, row_h - 4)
             else: # toggle
-                adj["rect_toggle"] = pygame.Rect(sb_x + 300, y_pos, 75, 18)
+                adj["rect_toggle"] = pygame.Rect(sb_x + pad_x + lbl_w + val_w + 5, y_pos, btn_pm_w * 2 + 5, row_h - 4)
 
     def scan_and_load_images(self):
         """Scans current working directory for image files, prioritizing img1.jpg."""
@@ -788,6 +830,10 @@ class PygameApp:
 
     def draw_sidebar_panel(self):
         sb_x = self.rect_sidebar.x
+        pad_x = 20
+        avail_w = self.sidebar_width - 40
+        right_edge = sb_x + self.sidebar_width - 20
+        
         pygame.draw.rect(self.screen, COLOR_BG, self.rect_sidebar)
         pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (sb_x, 0), (sb_x, self.screen_height), 2)
         
@@ -797,27 +843,29 @@ class PygameApp:
         
         # 1. Header Title
         title = self.font_title.render("Wireless GA Optimizer", True, COLOR_ACCENT)
-        self.screen.blit(title, (sb_x + 20, 15))
+        self.screen.blit(title, (sb_x + pad_x, 15))
         
         sub_text = f"Active: Grid {self.ga.grid_size}x{self.ga.grid_size} | Nodes: {len(self.devices)} | APs: {self.ga.num_aps}"
         sub = self.font_subtitle.render(sub_text, True, COLOR_TEXT_MUTED)
-        self.screen.blit(sub, (sb_x + 20, 42))
+        self.screen.blit(sub, (sb_x + pad_x, int(42 * self.font_scale)))
         
         seed_txt = f"Seed: {self.current_seed}"
         lbl_seed = self.font_subtitle.render(seed_txt, True, COLOR_ACCENT)
-        self.screen.blit(lbl_seed, (sb_x + 310, 42))
-        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (sb_x + 20, 62), (sb_x + 380, 62), 1)
+        self.screen.blit(lbl_seed, (right_edge - lbl_seed.get_width(), int(42 * self.font_scale)))
+        
+        line_y1 = int(62 * self.font_scale)
+        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (sb_x + pad_x, line_y1), (right_edge, line_y1), 1)
         
         # 2. Status Details
         txt_gen = self.font_header.render(f"Generation: {self.ga.generation}", True, COLOR_TEXT)
-        self.screen.blit(txt_gen, (sb_x + 20, 72))
+        self.screen.blit(txt_gen, (sb_x + pad_x, line_y1 + 10))
         
         status_text = "RUNNING" if self.is_running else "PAUSED"
         status_color = COLOR_GREEN if self.is_running else COLOR_ORANGE
         txt_status = self.font_header.render(status_text, True, status_color)
-        self.screen.blit(txt_status, (sb_x + 300, 72))
+        self.screen.blit(txt_status, (right_edge - txt_status.get_width(), line_y1 + 10))
         
-        # 3. Mode Toggle & Switch Image Buttons
+        # 3. Action Buttons Rendering
         mode_btn_lbl = "Mode: Custom Map" if self.mode == "CUSTOM_MAP" else "Mode: GA Grid"
         mode_btn_color = COLOR_ACCENT if self.mode == "CUSTOM_MAP" else COLOR_PANEL_BG
         pygame.draw.rect(self.screen, mode_btn_color, self.btn_mode, border_radius=6)
@@ -887,16 +935,23 @@ class PygameApp:
         if self.btn_apply_tgt.collidepoint(mouse_pos):
             pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_apply_tgt, 2, border_radius=6)
 
+        btn_h = int(26 * self.font_scale)
+        y4 = int(100 * self.font_scale) + (btn_h + 6) * 3
+        hdr_y = y4 + btn_h + int(6 * self.font_scale)
+        
         if reset_needed:
             lbl_warn = self.font_subtitle.render("* Target settings changed. Click Apply Settings.", True, COLOR_YELLOW)
-            self.screen.blit(lbl_warn, (sb_x + 20, 226))
+            self.screen.blit(lbl_warn, (sb_x + pad_x, hdr_y))
+            hdr_y += int(14 * self.font_scale)
 
         # 4. Parameters Adjusters Header
-        txt_param_hdr = self.font_header.render("Parameters & Target Size Constraints", True, COLOR_ACCENT)
-        self.screen.blit(txt_param_hdr, (sb_x + 20, 226 if not reset_needed else 238))
+        txt_param_hdr = self.font_header.render("Parameters & Target Constraints", True, COLOR_ACCENT)
+        self.screen.blit(txt_param_hdr, (sb_x + pad_x, hdr_y))
 
         # Draw parameter rows
-        adjust_start_y = 248 if not reset_needed else 260
+        row_h = int(22 * self.font_scale)
+        adjust_start_y = hdr_y + int(20 * self.font_scale)
+        
         for idx, adj in enumerate(self.adjusters):
             key = adj["key"]
             if key == "grid_size":
@@ -912,7 +967,7 @@ class PygameApp:
             else:
                 val = self.ga_config[key]
                 
-            y_pos = adjust_start_y + idx * 22
+            y_pos = adjust_start_y + idx * row_h
             adj["rect_val"].y = y_pos
             if adj["type"] == "slider":
                 adj["rect_minus"].y = y_pos
@@ -921,7 +976,7 @@ class PygameApp:
                 adj["rect_toggle"].y = y_pos
             
             lbl_name = self.font_body.render(adj["name"], True, COLOR_TEXT_MUTED)
-            self.screen.blit(lbl_name, (sb_x + 20, y_pos + 1))
+            self.screen.blit(lbl_name, (sb_x + pad_x, y_pos + 1))
             
             is_active = (self.active_input_key == key)
             val_bg_color = (45, 55, 75) if is_active else COLOR_BG
@@ -963,38 +1018,41 @@ class PygameApp:
                     pygame.draw.rect(self.screen, COLOR_WHITE, adj["rect_toggle"], 1, border_radius=4)
 
         # 5. Model Cost Breakdown
-        breakdown_y = adjust_start_y + len(self.adjusters) * 22 + 4
-        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (sb_x + 20, breakdown_y), (sb_x + 380, breakdown_y), 1)
+        breakdown_y = adjust_start_y + len(self.adjusters) * row_h + int(4 * self.font_scale)
+        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (sb_x + pad_x, breakdown_y), (right_edge, breakdown_y), 1)
         
         txt_costs = self.font_header.render(f"Best Model Cost: {int(best_ind.total_cost):,}", True, COLOR_ACCENT)
-        self.screen.blit(txt_costs, (sb_x + 20, breakdown_y + 6))
+        self.screen.blit(txt_costs, (sb_x + pad_x, breakdown_y + 6))
         
         c_power = f"Power cost: {int(best_ind.power_cost * self.ga.power_weight):,}"
         c_overlap = f"Overlap penalty: {int(best_ind.overlap_cost * self.ga.overlap_weight):,}"
         c_cap = f"Capacity penalty: {int(best_ind.capacity_cost * self.ga.capacity_weight):,}"
         
-        self.screen.blit(self.font_body.render(c_power, True, COLOR_TEXT_MUTED), (sb_x + 20, breakdown_y + 24))
-        self.screen.blit(self.font_body.render(c_overlap, True, COLOR_TEXT_MUTED), (sb_x + 20, breakdown_y + 40))
-        self.screen.blit(self.font_body.render(c_cap, True, COLOR_TEXT_MUTED), (sb_x + 20, breakdown_y + 56))
+        line_step = int(16 * self.font_scale)
+        self.screen.blit(self.font_body.render(c_power, True, COLOR_TEXT_MUTED), (sb_x + pad_x, breakdown_y + 6 + line_step))
+        self.screen.blit(self.font_body.render(c_overlap, True, COLOR_TEXT_MUTED), (sb_x + pad_x, breakdown_y + 6 + line_step * 2))
+        self.screen.blit(self.font_body.render(c_cap, True, COLOR_TEXT_MUTED), (sb_x + pad_x, breakdown_y + 6 + line_step * 3))
         
         # 6. Dynamic Router load bars layout
-        allocations_y = breakdown_y + 74
-        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (sb_x + 20, allocations_y), (sb_x + 380, allocations_y), 1)
+        allocations_y = breakdown_y + 6 + line_step * 4 + int(6 * self.font_scale)
+        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (sb_x + pad_x, allocations_y), (right_edge, allocations_y), 1)
         
         txt_routers = self.font_header.render("Router Load Allocations", True, COLOR_ACCENT)
-        self.screen.blit(txt_routers, (sb_x + 20, allocations_y + 4))
+        self.screen.blit(txt_routers, (sb_x + pad_x, allocations_y + 4))
         
-        bar_width = 100
+        col_w = avail_w // 3
+        bar_width = col_w - 20
         bar_height = 5
         ap_cap = self.ga.ap_capacity
         num_aps = self.ga.num_aps
         
+        row_step_ap = int(24 * self.font_scale)
         for i in range(num_aps):
             col = i % 3
             row = i // 3
             
-            x_bar = sb_x + 20 + col * 123
-            y_bar = allocations_y + 24 + row * 24
+            x_bar = sb_x + pad_x + col * col_w
+            y_bar = allocations_y + int(22 * self.font_scale) + row * row_step_ap
             
             load = best_ind.ap_loads[i] if i < len(best_ind.ap_loads) else 0
             percentage = min(1.0, load / ap_cap) if ap_cap > 0 else 0
@@ -1009,18 +1067,18 @@ class PygameApp:
             lbl_ap = self.font_mono.render(f"R{i+1}:{load:02d}/{ap_cap}", True, COLOR_TEXT)
             self.screen.blit(lbl_ap, (x_bar, y_bar))
             
-            pygame.draw.rect(self.screen, (20, 30, 45), (x_bar, y_bar + 12, bar_width, bar_height), border_radius=2)
+            pygame.draw.rect(self.screen, (20, 30, 45), (x_bar, y_bar + int(14 * self.font_scale), bar_width, bar_height), border_radius=2)
             if percentage > 0:
-                pygame.draw.rect(self.screen, bar_color, (x_bar, y_bar + 12, int(bar_width * percentage), bar_height), border_radius=2)
+                pygame.draw.rect(self.screen, bar_color, (x_bar, y_bar + int(14 * self.font_scale), int(bar_width * percentage), bar_height), border_radius=2)
 
         # 7. Mini Cost History Graph
-        chart_line_y = max(allocations_y + 24 + ((num_aps + 2) // 3) * 24 + 6, self.screen_height - 85)
-        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (sb_x + 20, chart_line_y), (sb_x + 380, chart_line_y), 1)
+        chart_line_y = max(allocations_y + int(24 * self.font_scale) + ((num_aps + 2) // 3) * row_step_ap + 6, self.screen_height - int(90 * self.font_scale))
+        pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (sb_x + pad_x, chart_line_y), (right_edge, chart_line_y), 1)
         
-        chart_x = sb_x + 20
+        chart_x = sb_x + pad_x
         chart_y = chart_line_y + 6
-        chart_w = 360
-        chart_h = min(65, self.screen_height - chart_y - 10)
+        chart_w = avail_w
+        chart_h = min(int(70 * self.font_scale), self.screen_height - chart_y - 10)
         
         if chart_h > 20:
             pygame.draw.rect(self.screen, COLOR_GRID_BG, (chart_x, chart_y, chart_w, chart_h), border_radius=6)
