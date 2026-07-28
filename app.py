@@ -142,15 +142,15 @@ class PygameApp:
 
         # Parameter Adjusters setup
         self.adjusters = [
-            {"name": "AP Radius", "key": "ap_radius", "fmt": lambda x: f"{x:.1f}", "step": 1.0, "type": "slider"},
+            {"name": "Access Point Radius", "key": "ap_radius", "fmt": lambda x: f"{x:.1f}", "step": 1.0, "type": "slider"},
             {"name": "Mutation Rate", "key": "mutation_rate", "fmt": lambda x: f"{x:.3f}", "step": 0.01, "type": "slider"},
             {"name": "Crossover Rate", "key": "crossover_rate", "fmt": lambda x: f"{x:.3f}", "step": 0.05, "type": "slider"},
-            {"name": "Power Wt", "key": "power_weight", "fmt": lambda x: f"{x:.1f}", "step": 0.1, "type": "slider"},
-            {"name": "Overlap Wt", "key": "overlap_weight", "fmt": lambda x: f"{x:.0f}", "step": 10.0, "type": "slider"},
-            {"name": "Capacity Wt", "key": "capacity_weight", "fmt": lambda x: f"{x:.0f}", "step": 50.0, "type": "slider"},
-            {"name": "Grid Size (Tgt)", "key": "grid_size", "fmt": lambda x: f"{x:d}", "step": 50, "type": "slider"},
-            {"name": "Nodes (Tgt)", "key": "nodes", "fmt": lambda x: f"{x:d}", "step": 10, "type": "slider"},
-            {"name": "AP Count (Tgt)", "key": "aps", "fmt": lambda x: f"{x:d}", "step": 1, "type": "slider"},
+            {"name": "Power Weight", "key": "power_weight", "fmt": lambda x: f"{x:.1f}", "step": 0.1, "type": "slider"},
+            {"name": "Overlap Weight", "key": "overlap_weight", "fmt": lambda x: f"{x:.0f}", "step": 10.0, "type": "slider"},
+            {"name": "Capacity Weight", "key": "capacity_weight", "fmt": lambda x: f"{x:.0f}", "step": 50.0, "type": "slider"},
+            {"name": "Grid Size", "key": "grid_size", "fmt": lambda x: f"{x:d}", "step": 50, "type": "slider"},
+            {"name": "Devices", "key": "nodes", "fmt": lambda x: f"{x:d}", "step": 10, "type": "slider"},
+            {"name": "Access Point Count", "key": "aps", "fmt": lambda x: f"{x:d}", "step": 1, "type": "slider"},
             {"name": "Show Links", "key": "show_links", "fmt": lambda x: "ON" if x else "OFF", "step": 0, "type": "toggle"},
             {"name": "Throttle Speed", "key": "throttle_speed", "fmt": lambda x: "ON" if x else "OFF", "step": 0, "type": "toggle"}
         ]
@@ -233,6 +233,12 @@ class PygameApp:
         if hasattr(self, 'adjusters'):
             self.reposition_controls()
 
+    def get_visible_adjusters(self):
+        """Returns parameter adjusters relevant to the active mode (hides Grid Size & Devices in User Defined mode)."""
+        if self.mode == "CUSTOM_MAP":
+            return [adj for adj in self.adjusters if adj["key"] not in ("grid_size", "nodes")]
+        return self.adjusters
+
     def reposition_controls(self):
         """Positions parameter adjusters inside sidebar with dynamic widths and spacing."""
         sb_x = self.rect_sidebar.x
@@ -249,7 +255,7 @@ class PygameApp:
         btn_pm_w = int(38 * self.font_scale)
         val_w = max(90, avail_w - lbl_w - btn_pm_w * 2 - 15)
         
-        for idx, adj in enumerate(self.adjusters):
+        for idx, adj in enumerate(self.get_visible_adjusters()):
             y_pos = start_y + idx * row_h
             adj["rect_val"] = pygame.Rect(sb_x + pad_x + lbl_w, y_pos, val_w, row_h - 4)
             if adj["type"] == "slider":
@@ -518,6 +524,7 @@ class PygameApp:
             self.devices = []
             self.target_num_nodes = 0
             self.ga.set_devices(self.devices)
+        self.reposition_controls()
 
     def clear_all_devices(self):
         """Clears all devices on the map and updates GA."""
@@ -548,7 +555,7 @@ class PygameApp:
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         clicked_another = False
-                        for adj in self.adjusters:
+                        for adj in self.get_visible_adjusters():
                             if adj["rect_val"].collidepoint(event.pos):
                                 self.apply_input_value()
                                 self.active_input_key = adj["key"]
@@ -633,7 +640,7 @@ class PygameApp:
                             self.perform_apply_and_reset(new_seed=False)
                             
                         # Adjusters
-                        for adj in self.adjusters:
+                        for adj in self.get_visible_adjusters():
                             key = adj["key"]
                             if adj["rect_val"].collidepoint(pos):
                                 self.active_input_key = key
@@ -962,10 +969,11 @@ class PygameApp:
         self.screen.blit(txt_param_hdr, (sb_x + pad_x, hdr_y))
 
         # Draw parameter rows
-        row_h = int(22 * self.font_scale)
+        row_h = int(24 * self.font_scale)
         adjust_start_y = hdr_y + int(20 * self.font_scale)
+        visible_adjusters = self.get_visible_adjusters()
         
-        for idx, adj in enumerate(self.adjusters):
+        for idx, adj in enumerate(visible_adjusters):
             key = adj["key"]
             if key == "grid_size":
                 val = self.target_grid_size
@@ -1031,7 +1039,7 @@ class PygameApp:
                     pygame.draw.rect(self.screen, COLOR_WHITE, adj["rect_toggle"], 1, border_radius=4)
 
         # 5. Model Cost Breakdown
-        breakdown_y = adjust_start_y + len(self.adjusters) * row_h + int(4 * self.font_scale)
+        breakdown_y = adjust_start_y + len(visible_adjusters) * row_h + int(4 * self.font_scale)
         pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (sb_x + pad_x, breakdown_y), (right_edge, breakdown_y), 1)
         
         txt_costs = self.font_header.render(f"Best Model Cost: {int(best_ind.total_cost):,}", True, COLOR_ACCENT)
