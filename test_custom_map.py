@@ -54,9 +54,9 @@ class TestCustomMapFeatures(unittest.TestCase):
 
     def test_coordinate_scaling(self):
         """Test coordinate transformation between screen pixel space and grid space."""
-        # Set dynamic grid rect size
-        self.app.grid_width = 1000
-        self.app.grid_height = 800
+        self.app.grid_size_px = 800
+        self.app.grid_offset_x = 100
+        self.app.grid_offset_y = 0
         self.app.ga.grid_size = 100
         
         # Screen (500, 400) -> GA (50.0, 50.0)
@@ -64,9 +64,9 @@ class TestCustomMapFeatures(unittest.TestCase):
         self.assertAlmostEqual(gx, 50.0)
         self.assertAlmostEqual(gy, 50.0)
         
-        # GA (25.0, 75.0) -> Screen (250, 600)
+        # GA (25.0, 75.0) -> Screen (300, 600)
         sx, sy = self.app.ga_to_screen_coords(25.0, 75.0)
-        self.assertEqual(sx, 250)
+        self.assertEqual(sx, 300)
         self.assertEqual(sy, 600)
 
 if __name__ == '__main__':

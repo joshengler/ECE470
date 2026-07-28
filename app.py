@@ -10,7 +10,7 @@ from genetic_algorithm import generate_devices, GeneticAlgorithm, Individual, De
 # Initial default configuration (configurable via code constants)
 DEFAULT_GRID_SIZE = 100
 DEFAULT_NUM_DEVICES = 100
-DEFAULT_NUM_APS = 5
+DEFAULT_NUM_APS = 3 #ap_count ap count
 
 # Color definitions (Premium Slate/Cyan/Purple Theme)
 COLOR_BG = (15, 23, 42)          # Slate-900
@@ -157,13 +157,23 @@ class PygameApp:
         self.reposition_controls()
 
     def update_layout(self):
-        """Calculates dynamic screen layout rects for map viewport and sidebar."""
+        """Calculates dynamic screen layout rects for map viewport and sidebar with 1:1 uniform grid scaling."""
         self.screen_width, self.screen_height = self.screen.get_size()
-        self.grid_width = max(100, self.screen_width - self.sidebar_width)
-        self.grid_height = self.screen_height
+        container_w = max(100, self.screen_width - self.sidebar_width)
+        container_h = self.screen_height
         
-        self.rect_grid = pygame.Rect(0, 0, self.grid_width, self.grid_height)
-        self.rect_sidebar = pygame.Rect(self.grid_width, 0, self.sidebar_width, self.grid_height)
+        # Enforce 1:1 square aspect ratio for grid independent of screen size
+        self.grid_size_px = min(container_w, container_h)
+        self.grid_offset_x = (container_w - self.grid_size_px) // 2
+        self.grid_offset_y = (container_h - self.grid_size_px) // 2
+        
+        self.rect_grid_container = pygame.Rect(0, 0, container_w, container_h)
+        self.rect_grid = pygame.Rect(self.grid_offset_x, self.grid_offset_y, self.grid_size_px, self.grid_size_px)
+        self.rect_sidebar = pygame.Rect(container_w, 0, self.sidebar_width, self.screen_height)
+        
+        # Scale factor (pixels per grid unit)
+        grid_size = float(self.ga.grid_size) if hasattr(self, 'ga') else 100.0
+        self.scale = float(self.grid_size_px) / grid_size
         
         # Dynamic Sidebar Action Buttons
         sb_x = self.rect_sidebar.x
@@ -240,12 +250,12 @@ class PygameApp:
             self.scaled_bg_image = None
 
     def scale_background_image(self):
-        """Scales raw background image surface to fit current map viewport dimensions."""
-        if self.raw_bg_image is not None and self.grid_width > 0 and self.grid_height > 0:
+        """Scales raw background image surface to fit square grid viewport dimensions."""
+        if self.raw_bg_image is not None and hasattr(self, 'grid_size_px') and self.grid_size_px > 0:
             try:
                 self.scaled_bg_image = pygame.transform.smoothscale(
                     self.raw_bg_image,
-                    (self.grid_width, self.grid_height)
+                    (self.grid_size_px, self.grid_size_px)
                 )
             except Exception:
                 self.scaled_bg_image = None
@@ -261,15 +271,17 @@ class PygameApp:
     def screen_to_ga_coords(self, sx: int, sy: int) -> Tuple[float, float]:
         """Converts screen pixel coordinates inside grid viewport to GA grid space [0, grid_size]."""
         grid_size = float(self.ga.grid_size)
-        gx = max(0.0, min(grid_size, (sx / float(self.grid_width)) * grid_size))
-        gy = max(0.0, min(grid_size, (sy / float(self.grid_height)) * grid_size))
+        rel_x = sx - self.grid_offset_x
+        rel_y = sy - self.grid_offset_y
+        gx = max(0.0, min(grid_size, (rel_x / float(self.grid_size_px)) * grid_size))
+        gy = max(0.0, min(grid_size, (rel_y / float(self.grid_size_px)) * grid_size))
         return (gx, gy)
 
     def ga_to_screen_coords(self, gx: float, gy: float) -> Tuple[int, int]:
         """Converts GA grid space coordinates [0, grid_size] to screen pixel coordinates."""
         grid_size = float(self.ga.grid_size)
-        sx = int((gx / grid_size) * self.grid_width)
-        sy = int((gy / grid_size) * self.grid_height)
+        sx = self.grid_offset_x + int((gx / grid_size) * self.grid_size_px)
+        sy = self.grid_offset_y + int((gy / grid_size) * self.grid_size_px)
         return (sx, sy)
 
     def find_device_near_screen_pos(self, sx: int, sy: int, threshold_pixels: float = 14.0) -> Optional[Device]:
@@ -545,7 +557,7 @@ class PygameApp:
                             self.devices.append(new_dev)
                             self.dragging_device = new_dev
                             self.target_num_nodes = len(self.devices)
-                            self.ga.set_devices(self.devices)
+                            self.ga.set_devices(self.devices, sort=False)
                     else:
                         # Sidebar Action buttons
                         if self.btn_mode.collidepoint(pos):
@@ -631,7 +643,7 @@ class PygameApp:
                             for idx, d in enumerate(self.devices):
                                 d.id = idx
                             self.target_num_nodes = len(self.devices)
-                            self.ga.set_devices(self.devices)
+                            self.ga.set_devices(self.devices, sort=False)
 
             elif event.type == pygame.MOUSEMOTION:
                 if self.dragging_device is not None and event.buttons[0] == 1:
@@ -639,7 +651,7 @@ class PygameApp:
                     gx, gy = self.screen_to_ga_coords(pos[0], pos[1])
                     self.dragging_device.x = gx
                     self.dragging_device.y = gy
-                    self.ga.set_devices(self.devices)
+                    self.ga.set_devices(self.devices, sort=False)
 
             elif event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1:
@@ -658,22 +670,23 @@ class PygameApp:
         pygame.display.flip()
 
     def draw_grid_panel(self):
+        # 1. Fill grid container area
+        pygame.draw.rect(self.screen, COLOR_BG, self.rect_grid_container)
         pygame.draw.rect(self.screen, COLOR_GRID_BG, self.rect_grid)
         
-        # 1. Render Scaled Background Image if available
+        # 2. Render Scaled Background Image if available
         if self.scaled_bg_image is not None:
-            self.screen.blit(self.scaled_bg_image, (0, 0))
-            # Draw translucent dark overlay in GA mode or subtle contrast overlay in Custom Map mode
-            overlay = pygame.Surface((self.grid_width, self.grid_height), pygame.SRCALPHA)
+            self.screen.blit(self.scaled_bg_image, (self.grid_offset_x, self.grid_offset_y))
+            overlay = pygame.Surface((self.grid_size_px, self.grid_size_px), pygame.SRCALPHA)
             overlay_alpha = 40 if self.mode == "CUSTOM_MAP" else 100
             overlay.fill((0, 0, 0, overlay_alpha))
-            self.screen.blit(overlay, (0, 0))
+            self.screen.blit(overlay, (self.grid_offset_x, self.grid_offset_y))
             
         best_ind = self.ga.get_best_individual()
         grid_size = float(self.ga.grid_size)
         
-        # 2. Draw subtle grid lines
-        scale_x = self.grid_width / grid_size
+        # 3. Draw subtle grid lines
+        scale_x = float(self.grid_size_px) / grid_size
         if scale_x >= 5.0:
             step = 1
         elif scale_x >= 2.0:
@@ -686,24 +699,28 @@ class PygameApp:
             step = 100
             
         grid_line_color = (255, 255, 255, 25) if self.scaled_bg_image else (20, 25, 40)
-        grid_overlay = pygame.Surface((self.grid_width, self.grid_height), pygame.SRCALPHA)
+        grid_overlay = pygame.Surface((self.grid_size_px, self.grid_size_px), pygame.SRCALPHA)
         for i in range(step, int(grid_size), step):
-            sx, sy = self.ga_to_screen_coords(i, i)
-            pygame.draw.line(grid_overlay, grid_line_color, (sx, 0), (sx, self.grid_height), 1)
-            pygame.draw.line(grid_overlay, grid_line_color, (0, sy), (self.grid_width, sy), 1)
-        self.screen.blit(grid_overlay, (0, 0))
+            grid_pos = int((i / grid_size) * self.grid_size_px)
+            pygame.draw.line(grid_overlay, grid_line_color, (grid_pos, 0), (grid_pos, self.grid_size_px), 1)
+            pygame.draw.line(grid_overlay, grid_line_color, (0, grid_pos), (self.grid_size_px, grid_pos), 1)
+        self.screen.blit(grid_overlay, (self.grid_offset_x, self.grid_offset_y))
         
-        # 3. Draw AP coverage circles (translucent overlay)
-        ap_overlay = pygame.Surface((self.grid_width, self.grid_height), pygame.SRCALPHA)
+        # 4. Draw AP coverage circles (translucent overlay with 1:1 scale)
+        ap_overlay = pygame.Surface((self.grid_size_px, self.grid_size_px), pygame.SRCALPHA)
+        ap_radius_px = int((self.ga.ap_radius / grid_size) * self.grid_size_px)
         for idx, ap in enumerate(best_ind.aps):
-            cx, cy = self.ga_to_screen_coords(ap[0], ap[1])
-            ap_radius_px = int((self.ga.ap_radius / grid_size) * min(self.grid_width, self.grid_height))
+            cx = int((ap[0] / grid_size) * self.grid_size_px)
+            cy = int((ap[1] / grid_size) * self.grid_size_px)
             color = AP_COLORS[idx % len(AP_COLORS)]
             pygame.draw.circle(ap_overlay, color + (30,), (cx, cy), ap_radius_px)
             pygame.draw.circle(ap_overlay, color + (70,), (cx, cy), ap_radius_px, 1)
-        self.screen.blit(ap_overlay, (0, 0))
+        self.screen.blit(ap_overlay, (self.grid_offset_x, self.grid_offset_y))
         
-        # 4. Draw connection paths (only if show_links toggle is ON)
+        # Outer Border around square grid area
+        pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, self.rect_grid, 2)
+        
+        # 5. Draw connection paths (only if show_links toggle is ON)
         if self.show_links and self.devices:
             for dev in self.devices:
                 if dev.id < len(best_ind.device_assignments):
@@ -715,7 +732,7 @@ class PygameApp:
                         end_pos = self.ga_to_screen_coords(ap[0], ap[1])
                         pygame.draw.line(self.screen, ap_color + (80,), start_pos, end_pos, 1)
                     
-        # 5. Draw Device Nodes
+        # 6. Draw Device Nodes
         mouse_pos = pygame.mouse.get_pos()
         hovered_dev = self.find_device_near_screen_pos(mouse_pos[0], mouse_pos[1]) if self.rect_grid.collidepoint(mouse_pos) else None
         
@@ -730,7 +747,7 @@ class PygameApp:
             pygame.draw.circle(self.screen, color, pos, radius)
             pygame.draw.circle(self.screen, COLOR_WHITE if is_active else COLOR_GRID_BG, pos, radius + 1, 1)
             
-        # 6. Draw Access Point Centers
+        # 7. Draw Access Point Centers
         for idx, ap in enumerate(best_ind.aps):
             cx, cy = self.ga_to_screen_coords(ap[0], ap[1])
             color = AP_COLORS[idx % len(AP_COLORS)]
@@ -748,11 +765,13 @@ class PygameApp:
             lbl = self.font_mono.render(str(idx + 1), True, COLOR_WHITE)
             self.screen.blit(lbl, (cx - lbl.get_width()//2, cy - 25))
 
-        # 7. Map Mode Banner & Placement Guidance
+        # 8. Map Mode Banner & Placement Guidance
+        banner_x = self.grid_offset_x + 10
+        banner_y = self.grid_offset_y + 10
         banner_surface = pygame.Surface((380, 48), pygame.SRCALPHA)
         banner_surface.fill((15, 23, 42, 220))
-        self.screen.blit(banner_surface, (10, 10))
-        pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, (10, 10, 380, 48), 1, border_radius=4)
+        self.screen.blit(banner_surface, (banner_x, banner_y))
+        pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, (banner_x, banner_y, 380, 48), 1, border_radius=4)
         
         mode_txt = "CUSTOM MAP MODE" if self.mode == "CUSTOM_MAP" else "STANDARD GA GRID MODE"
         img_name = os.path.basename(self.available_image_paths[self.current_image_idx]) if self.available_image_paths else "No Image"
@@ -761,9 +780,9 @@ class PygameApp:
         t_img = self.font_subtitle.render(f"Map Image: {img_name} | Devices: {len(self.devices)}", True, COLOR_TEXT_MUTED)
         t_hint = self.font_subtitle.render("Left-Click: Add/Drag Device | Right-Click: Remove | ESC: Fullscreen", True, COLOR_YELLOW)
         
-        self.screen.blit(t_mode, (18, 14))
-        self.screen.blit(t_img, (18, 28))
-        self.screen.blit(t_hint, (18, 42))
+        self.screen.blit(t_mode, (banner_x + 8, banner_y + 4))
+        self.screen.blit(t_img, (banner_x + 8, banner_y + 18))
+        self.screen.blit(t_hint, (banner_x + 8, banner_y + 32))
 
     def draw_sidebar_panel(self):
         sb_x = self.rect_sidebar.x
