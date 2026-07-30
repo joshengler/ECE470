@@ -19,7 +19,7 @@ class TestWirelessOptimizationGA(unittest.TestCase):
             self.assertTrue(0 <= dev.x <= 100)
             self.assertTrue(0 <= dev.y <= 100)
             
-            # Since cell centers are at integer + 0.5, we get the cell by rounding down
+            # Check integer grid cell coordinates
             cell = (int(dev.x), int(dev.y))
             grid_squares.add(cell)
             

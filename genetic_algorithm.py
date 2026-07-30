@@ -71,17 +71,17 @@ def _eval_single_individual_worker(args: Tuple) -> Tuple[float, float, float, fl
 def generate_devices(num_devices: int = 100, grid_size: int = 100, seed: int = 42) -> List[Device]:
     """
     Generates devices randomly using a hardcoded seed.
-    Places at most 1 device per grid square (center of the square).
+    Places at most 1 device per grid square (on grid line intersections).
     """
     rng = random.Random(seed)
     all_cells = [(x, y) for x in range(grid_size) for y in range(grid_size)]
     # Randomly select unique cells
     chosen_cells = rng.sample(all_cells, num_devices)
     
-    # Place each device at the center of the chosen cell (x + 0.5, y + 0.5)
+    # Place each device on integer grid line coordinates (x, y)
     devices = []
     for i, cell in enumerate(chosen_cells):
-        devices.append(Device(id=i, x=cell[0] + 0.5, y=cell[1] + 0.5))
+        devices.append(Device(id=i, x=float(cell[0]), y=float(cell[1])))
     return devices
 
 class GeneticAlgorithm:
