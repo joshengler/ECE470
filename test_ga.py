@@ -182,5 +182,30 @@ class TestWirelessOptimizationGA(unittest.TestCase):
         # Elitism guarantees that the best cost cannot worsen (meaning final_best_cost <= initial_best_cost)
         self.assertLessEqual(final_best_cost, initial_best_cost)
 
+    def test_termination_after_max_generations(self):
+        """Verify GA terminates after reaching max_generations (1000 by default)."""
+        ga = GeneticAlgorithm(
+            devices=self.devices,
+            pop_size=10,
+            max_generations=5
+        )
+        self.assertEqual(ga.max_generations, 5)
+        self.assertFalse(ga.is_finished)
+        
+        for _ in range(5):
+            ga.step()
+            
+        self.assertEqual(ga.generation, 5)
+        self.assertTrue(ga.is_finished)
+        
+        # Subsequent step should not increment generation beyond max_generations
+        ga.step()
+        self.assertEqual(ga.generation, 5)
+        self.assertTrue(ga.is_finished)
+
+        # Test default max_generations is 1000
+        ga_default = GeneticAlgorithm(devices=self.devices, pop_size=10)
+        self.assertEqual(ga_default.max_generations, 1000)
+
 if __name__ == '__main__':
     unittest.main()

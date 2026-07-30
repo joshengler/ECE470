@@ -99,7 +99,8 @@ class GeneticAlgorithm:
         power_weight: float = 1.0,
         overlap_weight: float = 100.0,
         capacity_weight: float = 500.0,
-        power_exponent: float = 2.0
+        power_exponent: float = 2.0,
+        max_generations: int = 1000
     ):
         self.devices = devices
         self.num_aps = num_aps
@@ -114,6 +115,7 @@ class GeneticAlgorithm:
         self.overlap_weight = overlap_weight
         self.capacity_weight = capacity_weight
         self.power_exponent = power_exponent
+        self.max_generations = max_generations
         
         self.population: List[Individual] = []
         self.generation = 0
@@ -128,6 +130,11 @@ class GeneticAlgorithm:
         self.executor = concurrent.futures.ProcessPoolExecutor(max_workers=self.num_workers)
         
         self.initialize_population()
+
+    @property
+    def is_finished(self) -> bool:
+        """Returns True if the genetic algorithm has reached max_generations."""
+        return self.generation >= self.max_generations
 
     def initialize_population(self):
         """Creates an initial population of random individuals."""
@@ -263,6 +270,9 @@ class GeneticAlgorithm:
 
     def step(self):
         """Executes one generation step of the Genetic Algorithm in parallel."""
+        if self.is_finished:
+            return
+            
         new_pop: List[Individual] = []
         
         # 1. Elitism: Keep the best individuals unchanged
@@ -318,6 +328,10 @@ class GeneticAlgorithm:
             self.capacity_weight = float(config['capacity_weight'])
         if 'power_exponent' in config:
             self.power_exponent = float(config['power_exponent'])
+        if 'max_generations' in config:
+            self.max_generations = int(config['max_generations'])
+        if 'max_iterations' in config:
+            self.max_generations = int(config['max_iterations'])
             
         self.evaluate_population(self.population)
         self.sort_population()

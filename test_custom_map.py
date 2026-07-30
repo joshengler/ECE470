@@ -87,5 +87,36 @@ class TestCustomMapFeatures(unittest.TestCase):
         self.assertEqual(self.app.devices[2].x, 30.0)
         self.assertEqual(self.app.ga.num_aps, 5)
 
+    def test_ui_button_visibility(self):
+        """Verify dynamic visibility rules for action buttons."""
+        # 1. New Devices button (btn_rotate_nodes) should be hidden in CUSTOM_MAP mode
+        self.app.mode = "CUSTOM_MAP"
+        self.app.update_layout()
+        self.assertEqual(self.app.btn_rotate_nodes.width, 0)
+
+        # In GA mode, New Devices button should have non-zero width
+        self.app.mode = "GA"
+        self.app.update_layout()
+        self.assertGreater(self.app.btn_rotate_nodes.width, 0)
+
+        # 2. Switch Image button (btn_next_image) should only be populated if multiple images were parsed
+        self.app.available_image_paths = ["/path/to/img1.png"]
+        self.app.update_layout()
+        self.assertEqual(self.app.btn_next_image.width, 0)
+
+        self.app.available_image_paths = ["/path/to/img1.png", "/path/to/img2.png"]
+        self.app.update_layout()
+        self.assertGreater(self.app.btn_next_image.width, 0)
+
+        # 3. Apply target settings button (btn_apply_tgt) should only appear when clickable (reset_needed)
+        self.assertFalse(self.app.is_reset_required())
+        self.app.reposition_controls()
+        self.assertEqual(self.app.btn_apply_tgt.width, 0)
+
+        self.app.target_grid_size = 200 # change parameter so reset is required
+        self.assertTrue(self.app.is_reset_required())
+        self.app.reposition_controls()
+        self.assertGreater(self.app.btn_apply_tgt.width, 0)
+
 if __name__ == '__main__':
     unittest.main()

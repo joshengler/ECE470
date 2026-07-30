@@ -208,24 +208,31 @@ class PygameApp:
         spacing = btn_h + 6
         
         # Row 1: Mode & Image Controls
-        self.btn_mode = pygame.Rect(sb_x + pad_x, y_start, btn_w_half, btn_h)
-        self.btn_next_image = pygame.Rect(sb_x + pad_x + btn_w_half + 10, y_start, btn_w_half, btn_h)
+        has_multiple_images = hasattr(self, 'available_image_paths') and len(self.available_image_paths) > 1
+        if has_multiple_images:
+            self.btn_mode = pygame.Rect(sb_x + pad_x, y_start, btn_w_half, btn_h)
+            self.btn_next_image = pygame.Rect(sb_x + pad_x + btn_w_half + 10, y_start, btn_w_half, btn_h)
+        else:
+            self.btn_mode = pygame.Rect(sb_x + pad_x, y_start, avail_w, btn_h)
+            self.btn_next_image = pygame.Rect(0, 0, 0, 0)
         
-        # Row 2: Play & Step Actions
+        # Row 2: Play Action
         y2 = y_start + spacing
-        self.btn_play = pygame.Rect(sb_x + pad_x, y2, btn_w_third, btn_h)
-        self.btn_step = pygame.Rect(sb_x + pad_x + btn_w_third + 10, y2, btn_w_third, btn_h)
-        self.btn_step10 = pygame.Rect(sb_x + pad_x + (btn_w_third + 10)*2, y2, btn_w_third, btn_h)
+        self.btn_play = pygame.Rect(sb_x + pad_x, y2, avail_w, btn_h)
+        self.btn_step = pygame.Rect(0, 0, 0, 0)
+        self.btn_step10 = pygame.Rect(0, 0, 0, 0)
         
         # Row 3: GA Reset, Device Edit Actions
         y3 = y2 + spacing
-        self.btn_reset_ga = pygame.Rect(sb_x + pad_x, y3, btn_w_third, btn_h)
-        self.btn_clear_devices = pygame.Rect(sb_x + pad_x + btn_w_third + 10, y3, btn_w_third, btn_h)
-        self.btn_rotate_nodes = pygame.Rect(sb_x + pad_x + (btn_w_third + 10)*2, y3, btn_w_third, btn_h)
-        
-        # Apply Settings button
-        y4 = y3 + spacing
-        self.btn_apply_tgt = pygame.Rect(sb_x + pad_x, y4, avail_w, btn_h)
+        is_custom_mode = hasattr(self, 'mode') and self.mode == "CUSTOM_MAP"
+        if is_custom_mode:
+            self.btn_reset_ga = pygame.Rect(sb_x + pad_x, y3, btn_w_half, btn_h)
+            self.btn_clear_devices = pygame.Rect(sb_x + pad_x + btn_w_half + 10, y3, btn_w_half, btn_h)
+            self.btn_rotate_nodes = pygame.Rect(0, 0, 0, 0)
+        else:
+            self.btn_reset_ga = pygame.Rect(sb_x + pad_x, y3, btn_w_third, btn_h)
+            self.btn_clear_devices = pygame.Rect(sb_x + pad_x + btn_w_third + 10, y3, btn_w_third, btn_h)
+            self.btn_rotate_nodes = pygame.Rect(sb_x + pad_x + (btn_w_third + 10)*2, y3, btn_w_third, btn_h)
         
         # Scale background image if loaded
         self.scale_background_image()
@@ -247,8 +254,19 @@ class PygameApp:
         reset_needed = self.is_reset_required()
         
         btn_h = int(28 * self.font_scale)
-        y4 = int(90 * self.font_scale) + (btn_h + 6) * 3
-        start_y = y4 + btn_h + int((26 if not reset_needed else 38) * self.font_scale)
+        y_start = int(90 * self.font_scale)
+        spacing = btn_h + 6
+        y3 = y_start + spacing * 2
+        
+        if reset_needed:
+            y4 = y3 + spacing
+            self.btn_apply_tgt = pygame.Rect(sb_x + pad_x, y4, avail_w, btn_h)
+            hdr_y = y4 + btn_h + int(20 * self.font_scale)
+        else:
+            self.btn_apply_tgt = pygame.Rect(0, 0, 0, 0)
+            hdr_y = y3 + btn_h + int(14 * self.font_scale)
+            
+        start_y = hdr_y + int(20 * self.font_scale)
         
         row_h = int(24 * self.font_scale)
         lbl_w = min(int(175 * self.font_scale), avail_w // 2)
@@ -366,13 +384,20 @@ class PygameApp:
 
     def update_logic(self):
         if self.is_running:
+            if self.ga.is_finished:
+                self.is_running = False
+                return
             if self.throttle_speed:
                 current_time = time.time()
                 if current_time - self.last_step_time >= self.step_delay:
                     self.ga.step()
                     self.last_step_time = current_time
+                    if self.ga.is_finished:
+                        self.is_running = False
             else:
                 self.ga.step()
+                if self.ga.is_finished:
+                    self.is_running = False
 
     def update_cursor(self):
         """Changes mouse cursor to hand/crosshair based on active interactions."""
@@ -380,9 +405,15 @@ class PygameApp:
         hovering_button = False
         
         # Check action buttons
-        for btn in [self.btn_mode, self.btn_next_image, self.btn_play, self.btn_step, 
-                    self.btn_step10, self.btn_reset_ga, self.btn_clear_devices, 
-                    self.btn_rotate_nodes, self.btn_apply_tgt]:
+        active_buttons = [self.btn_mode, self.btn_play, self.btn_reset_ga, self.btn_clear_devices]
+        if len(self.available_image_paths) > 1:
+            active_buttons.append(self.btn_next_image)
+        if self.mode != "CUSTOM_MAP":
+            active_buttons.append(self.btn_rotate_nodes)
+        if self.is_reset_required():
+            active_buttons.append(self.btn_apply_tgt)
+            
+        for btn in active_buttons:
             if btn.collidepoint(pos):
                 hovering_button = True
                 break
@@ -507,6 +538,7 @@ class PygameApp:
             pass
             
         self.active_input_key = None
+        self.reposition_controls()
 
     def perform_apply_and_reset(self, new_seed: bool = False):
         """Re-initializes GA using target values, preserving user-placed devices in CUSTOM_MAP mode."""
@@ -543,6 +575,7 @@ class PygameApp:
             power_exponent=self.ga_config["power_exponent"]
         )
         self.last_step_time = 0.0
+        self.reposition_controls()
 
     def toggle_mode(self):
         """Toggles mode between CUSTOM_MAP and GA."""
@@ -558,13 +591,14 @@ class PygameApp:
             self.devices = []
             self.target_num_nodes = 0
             self.ga.set_devices(self.devices)
-        self.reposition_controls()
+        self.update_layout()
 
     def clear_all_devices(self):
         """Clears all devices on the map and updates GA."""
         self.devices = []
         self.target_num_nodes = 0
         self.ga.set_devices(self.devices)
+        self.reposition_controls()
 
     def handle_events(self):
         for event in pygame.event.get():
@@ -612,7 +646,8 @@ class PygameApp:
                 elif event.key == pygame.K_F11:
                     self.toggle_fullscreen()
                 elif event.key == pygame.K_SPACE:
-                    self.is_running = not self.is_running
+                    if not self.ga.is_finished:
+                        self.is_running = not self.is_running
                 elif event.key == pygame.K_s:
                     self.is_running = False
                     self.ga.step()
@@ -653,25 +688,22 @@ class PygameApp:
                         if self.btn_mode.collidepoint(pos):
                             self.toggle_mode()
                         elif self.btn_next_image.collidepoint(pos):
-                            self.cycle_next_image()
+                            if len(self.available_image_paths) > 1:
+                                self.cycle_next_image()
                         elif self.btn_play.collidepoint(pos):
-                            self.is_running = not self.is_running
-                        elif self.btn_step.collidepoint(pos):
-                            self.is_running = False
-                            self.ga.step()
-                        elif self.btn_step10.collidepoint(pos):
-                            self.is_running = False
-                            for _ in range(10):
-                                self.ga.step()
+                            if not self.ga.is_finished:
+                                self.is_running = not self.is_running
                         elif self.btn_reset_ga.collidepoint(pos):
                             self.is_running = False
                             self.ga.initialize_population()
                         elif self.btn_clear_devices.collidepoint(pos):
                             self.clear_all_devices()
                         elif self.btn_rotate_nodes.collidepoint(pos):
-                            self.perform_apply_and_reset(new_seed=True)
+                            if self.mode != "CUSTOM_MAP":
+                                self.perform_apply_and_reset(new_seed=True)
                         elif self.btn_apply_tgt.collidepoint(pos):
-                            self.perform_apply_and_reset(new_seed=False)
+                            if self.is_reset_required():
+                                self.perform_apply_and_reset(new_seed=False)
                             
                         # Adjusters
                         for adj in self.get_visible_adjusters():
@@ -713,6 +745,7 @@ class PygameApp:
                                         self.set_ap_count_live(int(new_val))
                                     else:
                                         self.update_param(key, new_val)
+                                    self.reposition_controls()
                                 elif adj["rect_plus"].collidepoint(pos):
                                     new_val = min(max_b, val + adj["step"])
                                     if key == "grid_size":
@@ -723,6 +756,7 @@ class PygameApp:
                                         self.set_ap_count_live(int(new_val))
                                     else:
                                         self.update_param(key, new_val)
+                                    self.reposition_controls()
 
                 elif event.button == 3: # Right Click - Remove device
                     if self.rect_grid.collidepoint(pos):
@@ -764,12 +798,12 @@ class PygameApp:
         pygame.draw.rect(self.screen, COLOR_BG, self.rect_grid_container)
         pygame.draw.rect(self.screen, COLOR_GRID_BG, self.rect_grid)
         
-        # 2. Render Scaled Background Image if available
-        if self.scaled_bg_image is not None:
+        # 2. Render Scaled Background Image if available (only in CUSTOM_MAP mode)
+        show_bg_image = (self.scaled_bg_image is not None) and (self.mode == "CUSTOM_MAP")
+        if show_bg_image:
             self.screen.blit(self.scaled_bg_image, (self.grid_offset_x, self.grid_offset_y))
             overlay = pygame.Surface((self.grid_size_px, self.grid_size_px), pygame.SRCALPHA)
-            overlay_alpha = 40 if self.mode == "CUSTOM_MAP" else 100
-            overlay.fill((0, 0, 0, overlay_alpha))
+            overlay.fill((0, 0, 0, 40))
             self.screen.blit(overlay, (self.grid_offset_x, self.grid_offset_y))
             
         best_ind = self.ga.get_best_individual()
@@ -788,7 +822,7 @@ class PygameApp:
         else:
             step = 100
             
-        grid_line_color = (255, 255, 255, 25) if self.scaled_bg_image else (20, 25, 40)
+        grid_line_color = (255, 255, 255, 25) if show_bg_image else (20, 25, 40)
         grid_overlay = pygame.Surface((self.grid_size_px, self.grid_size_px), pygame.SRCALPHA)
         for i in range(step, int(grid_size), step):
             grid_pos = int((i / grid_size) * self.grid_size_px)
@@ -911,11 +945,18 @@ class PygameApp:
         pygame.draw.line(self.screen, COLOR_PANEL_BORDER, (sb_x + pad_x, line_y1), (right_edge, line_y1), 1)
         
         # 2. Status Details
-        txt_gen = self.font_header.render(f"Generation: {self.ga.generation}", True, COLOR_TEXT)
+        txt_gen = self.font_header.render(f"Generation: {self.ga.generation}/{self.ga.max_generations}", True, COLOR_TEXT)
         self.screen.blit(txt_gen, (sb_x + pad_x, line_y1 + 10))
         
-        status_text = "RUNNING" if self.is_running else "PAUSED"
-        status_color = COLOR_GREEN if self.is_running else COLOR_ORANGE
+        if self.ga.is_finished:
+            status_text = "COMPLETED"
+            status_color = COLOR_ACCENT
+        elif self.is_running:
+            status_text = "RUNNING"
+            status_color = COLOR_GREEN
+        else:
+            status_text = "PAUSED"
+            status_color = COLOR_ORANGE
         txt_status = self.font_header.render(status_text, True, status_color)
         self.screen.blit(txt_status, (right_edge - txt_status.get_width(), line_y1 + 10))
         
@@ -928,12 +969,13 @@ class PygameApp:
         if self.btn_mode.collidepoint(mouse_pos):
             pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_mode, 2, border_radius=6)
             
-        pygame.draw.rect(self.screen, COLOR_PANEL_BG, self.btn_next_image, border_radius=6)
-        pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, self.btn_next_image, 1, border_radius=6)
-        lbl_img = self.font_header.render("Switch Image", True, COLOR_TEXT)
-        self.screen.blit(lbl_img, (self.btn_next_image.centerx - lbl_img.get_width()//2, self.btn_next_image.centery - lbl_img.get_height()//2))
-        if self.btn_next_image.collidepoint(mouse_pos):
-            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_next_image, 2, border_radius=6)
+        if len(self.available_image_paths) > 1:
+            pygame.draw.rect(self.screen, COLOR_PANEL_BG, self.btn_next_image, border_radius=6)
+            pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, self.btn_next_image, 1, border_radius=6)
+            lbl_img = self.font_header.render("Switch Image", True, COLOR_TEXT)
+            self.screen.blit(lbl_img, (self.btn_next_image.centerx - lbl_img.get_width()//2, self.btn_next_image.centery - lbl_img.get_height()//2))
+            if self.btn_next_image.collidepoint(mouse_pos):
+                pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_next_image, 2, border_radius=6)
             
         # Optimize / Step / Step 10 Buttons
         play_btn_color = COLOR_ORANGE if self.is_running else COLOR_GREEN
@@ -944,20 +986,6 @@ class PygameApp:
         if self.btn_play.collidepoint(mouse_pos):
             pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_play, 2, border_radius=6)
             
-        pygame.draw.rect(self.screen, COLOR_PANEL_BG, self.btn_step, border_radius=6)
-        pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, self.btn_step, 1, border_radius=6)
-        lbl_step = self.font_header.render("Step 1", True, COLOR_TEXT)
-        self.screen.blit(lbl_step, (self.btn_step.centerx - lbl_step.get_width()//2, self.btn_step.centery - lbl_step.get_height()//2))
-        if self.btn_step.collidepoint(mouse_pos):
-            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_step, 2, border_radius=6)
-            
-        pygame.draw.rect(self.screen, COLOR_PANEL_BG, self.btn_step10, border_radius=6)
-        pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, self.btn_step10, 1, border_radius=6)
-        lbl_step10 = self.font_header.render("Step 10", True, COLOR_TEXT)
-        self.screen.blit(lbl_step10, (self.btn_step10.centerx - lbl_step10.get_width()//2, self.btn_step10.centery - lbl_step10.get_height()//2))
-        if self.btn_step10.collidepoint(mouse_pos):
-            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_step10, 2, border_radius=6)
-
         # Reset APs / Clear Devices / New Devices Buttons
         pygame.draw.rect(self.screen, COLOR_RED, self.btn_reset_ga, border_radius=6)
         lbl_reset_ga = self.font_header.render("Reset APs", True, COLOR_WHITE)
@@ -972,31 +1000,33 @@ class PygameApp:
         if self.btn_clear_devices.collidepoint(mouse_pos):
             pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_clear_devices, 2, border_radius=6)
 
-        pygame.draw.rect(self.screen, COLOR_CHART_AVG, self.btn_rotate_nodes, border_radius=6)
-        lbl_rot = self.font_header.render("New Devices", True, COLOR_WHITE)
-        self.screen.blit(lbl_rot, (self.btn_rotate_nodes.centerx - lbl_rot.get_width()//2, self.btn_rotate_nodes.centery - lbl_rot.get_height()//2))
-        if self.btn_rotate_nodes.collidepoint(mouse_pos):
-            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_rotate_nodes, 2, border_radius=6)
+        if self.mode != "CUSTOM_MAP":
+            pygame.draw.rect(self.screen, COLOR_CHART_AVG, self.btn_rotate_nodes, border_radius=6)
+            lbl_rot = self.font_header.render("New Devices", True, COLOR_WHITE)
+            self.screen.blit(lbl_rot, (self.btn_rotate_nodes.centerx - lbl_rot.get_width()//2, self.btn_rotate_nodes.centery - lbl_rot.get_height()//2))
+            if self.btn_rotate_nodes.collidepoint(mouse_pos):
+                pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_rotate_nodes, 2, border_radius=6)
 
-        # Apply Tgt Configurations
-        apply_btn_color = COLOR_ORANGE if reset_needed else COLOR_PANEL_BG
-        apply_text_color = COLOR_WHITE if reset_needed else COLOR_TEXT
-        pygame.draw.rect(self.screen, apply_btn_color, self.btn_apply_tgt, border_radius=6)
-        if not reset_needed:
-            pygame.draw.rect(self.screen, COLOR_PANEL_BORDER, self.btn_apply_tgt, 1, border_radius=6)
-        lbl_apply = self.font_header.render("Apply Target Settings", True, apply_text_color)
-        self.screen.blit(lbl_apply, (self.btn_apply_tgt.centerx - lbl_apply.get_width()//2, self.btn_apply_tgt.centery - lbl_apply.get_height()//2))
-        if self.btn_apply_tgt.collidepoint(mouse_pos):
-            pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_apply_tgt, 2, border_radius=6)
+        # Apply Tgt Configurations - only when reset_needed
+        btn_h = int(28 * self.font_scale)
+        y_start = int(90 * self.font_scale)
+        spacing = btn_h + 6
+        y3 = y_start + spacing * 2
 
-        btn_h = int(26 * self.font_scale)
-        y4 = int(100 * self.font_scale) + (btn_h + 6) * 3
-        hdr_y = y4 + btn_h + int(6 * self.font_scale)
-        
         if reset_needed:
+            y4 = y3 + spacing
+            pygame.draw.rect(self.screen, COLOR_ORANGE, self.btn_apply_tgt, border_radius=6)
+            lbl_apply = self.font_header.render("Apply Target Settings", True, COLOR_WHITE)
+            self.screen.blit(lbl_apply, (self.btn_apply_tgt.centerx - lbl_apply.get_width()//2, self.btn_apply_tgt.centery - lbl_apply.get_height()//2))
+            if self.btn_apply_tgt.collidepoint(mouse_pos):
+                pygame.draw.rect(self.screen, COLOR_WHITE, self.btn_apply_tgt, 2, border_radius=6)
+
+            hdr_y = y4 + btn_h + int(6 * self.font_scale)
             lbl_warn = self.font_subtitle.render("* Target settings changed. Click Apply Settings.", True, COLOR_YELLOW)
             self.screen.blit(lbl_warn, (sb_x + pad_x, hdr_y))
             hdr_y += int(14 * self.font_scale)
+        else:
+            hdr_y = y3 + btn_h + int(14 * self.font_scale)
 
         # 4. Parameters Adjusters Header
         txt_param_hdr = self.font_header.render("Parameters & Target Constraints", True, COLOR_ACCENT)
