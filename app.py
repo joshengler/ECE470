@@ -95,8 +95,8 @@ class PygameApp:
             "elitism_count": 2,
             "ap_radius": 25.0,
             "ap_capacity": initial_capacity,
-            "power_weight": 1.0,
-            "overlap_weight": 120.0,
+            "power_weight": 40.0,
+            "overlap_weight": 30.0,
             "capacity_weight": 500.0,
             "power_exponent": 2.0
         }

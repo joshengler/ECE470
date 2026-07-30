@@ -96,8 +96,8 @@ class GeneticAlgorithm:
         elitism_count: int = 2,
         ap_radius: float = 25.0,
         ap_capacity: int = 22,
-        power_weight: float = 1.0,
-        overlap_weight: float = 100.0,
+        power_weight: float = 40.0,
+        overlap_weight: float = 30.0,
         capacity_weight: float = 500.0,
         power_exponent: float = 2.0,
         max_generations: int = 1000
