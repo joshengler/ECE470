@@ -142,7 +142,6 @@ class PygameApp:
 
         # Parameter Adjusters setup
         self.adjusters = [
-            {"name": "Access Point Radius", "key": "ap_radius", "fmt": lambda x: f"{x:.1f}", "step": 1.0, "type": "slider"},
             {"name": "Mutation Rate", "key": "mutation_rate", "fmt": lambda x: f"{x:.3f}", "step": 0.01, "type": "slider"},
             {"name": "Crossover Rate", "key": "crossover_rate", "fmt": lambda x: f"{x:.3f}", "step": 0.05, "type": "slider"},
             {"name": "Power Weight", "key": "power_weight", "fmt": lambda x: f"{x:.1f}", "step": 0.1, "type": "slider"},
@@ -151,6 +150,7 @@ class PygameApp:
             {"name": "Grid Size", "key": "grid_size", "fmt": lambda x: f"{x:d}", "step": 50, "type": "slider"},
             {"name": "Devices", "key": "nodes", "fmt": lambda x: f"{x:d}", "step": 10, "type": "slider"},
             {"name": "Access Point Count", "key": "aps", "fmt": lambda x: f"{x:d}", "step": 1, "type": "slider"},
+            {"name": "Access Point Radius", "key": "ap_radius", "fmt": lambda x: f"{x:.1f}", "step": 1.0, "type": "slider"},
             {"name": "Show Links", "key": "show_links", "fmt": lambda x: "ON" if x else "OFF", "step": 0, "type": "toggle"},
             {"name": "Throttle Speed", "key": "throttle_speed", "fmt": lambda x: "ON" if x else "OFF", "step": 0, "type": "toggle"}
         ]
