@@ -107,6 +107,7 @@ class GeneticAlgorithm:
         self.grid_size = grid_size
         self.pop_size = pop_size
         self.mutation_rate = mutation_rate
+        self.base_mutation_rate = mutation_rate  # baseline for adaptive mutation
         self.crossover_rate = crossover_rate
         self.elitism_count = elitism_count
         self.ap_radius = ap_radius
@@ -121,6 +122,24 @@ class GeneticAlgorithm:
         self.generation = 0
         self.best_history: List[float] = []
         self.avg_history: List[float] = []
+        
+        # --- Anti-local-minima parameters ---
+        # Stagnation detection
+        self.stagnation_counter: int = 0
+        self.stagnation_threshold: int = 20  # generations without improvement to trigger adaptation
+        self.stagnation_improvement_pct: float = 0.001  # 0.1% improvement required to reset stagnation
+        
+        # Adaptive mutation
+        self.adaptive_mutation_boost: float = 3.0  # multiplier applied to mutation rate during stagnation
+        self.mutation_std_scale: float = 0.05  # current mutation step size (fraction of grid_size)
+        self.base_mutation_std_scale: float = 0.05  # baseline step size
+        self.stagnation_std_scale: float = 0.20  # larger step size used during stagnation
+        
+        # Random immigrant injection
+        self.immigrant_fraction: float = 0.15  # fraction of population replaced with random individuals on stagnation
+        
+        # Blend crossover alpha (BLX-α)
+        self.blx_alpha: float = 0.3  # exploration range beyond parents
         
         # Internal random generator for GA operations
         self.rng = random.Random()
@@ -225,40 +244,72 @@ class GeneticAlgorithm:
         self.best_history.append(best_cost)
         self.avg_history.append(avg_cost)
 
-    def select_parent(self, tournament_size: int = 3) -> Individual:
+    def select_parent(self, tournament_size: int = 5) -> Individual:
         """Selects an individual using tournament selection."""
-        candidates = self.rng.sample(self.population, tournament_size)
+        k = min(tournament_size, len(self.population))
+        candidates = self.rng.sample(self.population, k)
         return min(candidates, key=lambda x: x.total_cost)
 
     def crossover(self, parent1: Individual, parent2: Individual) -> Tuple[Individual, Individual]:
-        """Performs crossover between two parents to produce two children."""
+        """Performs blend crossover (BLX-α) between two parents to produce two children.
+        
+        BLX-α explores the space between parents and slightly beyond (controlled by
+        self.blx_alpha), which helps escape local minima by generating offspring
+        that are not simple recombinations of parent genes.
+        """
         if self.rng.random() > self.crossover_rate:
             return Individual(aps=list(parent1.aps)), Individual(aps=list(parent2.aps))
             
         child1_aps = []
         child2_aps = []
+        alpha = self.blx_alpha
         
-        # Uniform crossover of AP locations
         for i in range(self.num_aps):
-            if self.rng.random() < 0.5:
-                child1_aps.append(parent1.aps[i])
-                child2_aps.append(parent2.aps[i])
-            else:
-                child1_aps.append(parent2.aps[i])
-                child2_aps.append(parent1.aps[i])
+            x1, y1 = parent1.aps[i]
+            x2, y2 = parent2.aps[i]
+            
+            dx = abs(x1 - x2)
+            dy = abs(y1 - y2)
+            
+            x_lo = min(x1, x2) - alpha * dx
+            x_hi = max(x1, x2) + alpha * dx
+            y_lo = min(y1, y2) - alpha * dy
+            y_hi = max(y1, y2) + alpha * dy
+            
+            # Child 1: sample within the extended range
+            cx1 = self.rng.uniform(x_lo, x_hi)
+            cy1 = self.rng.uniform(y_lo, y_hi)
+            cx1 = max(0.0, min(self.grid_size, cx1))
+            cy1 = max(0.0, min(self.grid_size, cy1))
+            child1_aps.append((cx1, cy1))
+            
+            # Child 2: sample independently within the same range
+            cx2 = self.rng.uniform(x_lo, x_hi)
+            cy2 = self.rng.uniform(y_lo, y_hi)
+            cx2 = max(0.0, min(self.grid_size, cx2))
+            cy2 = max(0.0, min(self.grid_size, cy2))
+            child2_aps.append((cx2, cy2))
                 
         return Individual(aps=child1_aps), Individual(aps=child2_aps)
 
     def mutate(self, individual: Individual):
-        """Mutates an individual's AP coordinates in place."""
+        """Mutates an individual's AP coordinates in place.
+        
+        Uses adaptive mutation: the effective mutation rate and step size
+        are boosted during stagnation periods to increase exploration.
+        """
+        effective_rate = self.mutation_rate
+        effective_std = self.mutation_std_scale
+        
         new_aps = []
         for ap in individual.aps:
-            if self.rng.random() < self.mutation_rate:
-                if self.rng.random() < 0.1:
+            if self.rng.random() < effective_rate:
+                if self.rng.random() < 0.15:
+                    # Full random reset for this AP (increased from 10% to 15%)
                     x = self.rng.uniform(0, self.grid_size)
                     y = self.rng.uniform(0, self.grid_size)
                 else:
-                    std_dev = self.grid_size * 0.05
+                    std_dev = self.grid_size * effective_std
                     x = self.rng.gauss(ap[0], std_dev)
                     y = self.rng.gauss(ap[1], std_dev)
                     x = max(0.0, min(self.grid_size, x))
@@ -268,10 +319,67 @@ class GeneticAlgorithm:
                 new_aps.append(ap)
         individual.aps = new_aps
 
+    def _detect_and_adapt_stagnation(self):
+        """Detects stagnation and adapts mutation parameters to escape local minima.
+        
+        Stagnation is detected when the best fitness hasn't improved by at least
+        stagnation_improvement_pct for stagnation_threshold consecutive generations.
+        When stagnated, mutation rate and step size are boosted.
+        """
+        if len(self.best_history) < 2:
+            return
+        
+        prev_best = self.best_history[-2]
+        curr_best = self.best_history[-1]
+        
+        # Check if meaningful improvement occurred
+        if prev_best > 0 and (prev_best - curr_best) / prev_best > self.stagnation_improvement_pct:
+            # Progress is being made — reset stagnation and restore baseline parameters
+            self.stagnation_counter = 0
+            self.mutation_rate = self.base_mutation_rate
+            self.mutation_std_scale = self.base_mutation_std_scale
+        else:
+            self.stagnation_counter += 1
+        
+        if self.stagnation_counter >= self.stagnation_threshold:
+            # Boost mutation to increase exploration
+            self.mutation_rate = min(1.0, self.base_mutation_rate * self.adaptive_mutation_boost)
+            self.mutation_std_scale = self.stagnation_std_scale
+    
+    def _inject_random_immigrants(self, population: List[Individual]) -> List[Individual]:
+        """Replaces the worst fraction of the population with fresh random individuals.
+        
+        This re-injects genetic diversity when the population has converged too tightly,
+        giving the GA new material to combine with the existing elite solutions.
+        """
+        num_immigrants = max(1, int(len(population) * self.immigrant_fraction))
+        
+        immigrants = []
+        for _ in range(num_immigrants):
+            aps = []
+            for _ in range(self.num_aps):
+                x = self.rng.uniform(0, self.grid_size)
+                y = self.rng.uniform(0, self.grid_size)
+                aps.append((x, y))
+            immigrants.append(Individual(aps=aps))
+        
+        self.evaluate_population(immigrants)
+        
+        # Replace the worst individuals (end of sorted list) with immigrants
+        population[-num_immigrants:] = immigrants
+        return population
+
     def step(self):
-        """Executes one generation step of the Genetic Algorithm in parallel."""
+        """Executes one generation step of the Genetic Algorithm in parallel.
+        
+        Includes adaptive mutation, stagnation detection, and random immigrant
+        injection to avoid getting trapped in local minima.
+        """
         if self.is_finished:
             return
+        
+        # Adapt mutation parameters based on stagnation detection
+        self._detect_and_adapt_stagnation()
             
         new_pop: List[Individual] = []
         
@@ -299,6 +407,12 @@ class GeneticAlgorithm:
         self.evaluate_population(new_pop)
         self.population = new_pop
         self.sort_population()
+        
+        # 3. Inject random immigrants when stagnated to re-diversify
+        if self.stagnation_counter >= self.stagnation_threshold:
+            self.population = self._inject_random_immigrants(self.population)
+            self.sort_population()
+        
         self.generation += 1
         self.record_stats()
 
@@ -312,6 +426,7 @@ class GeneticAlgorithm:
             self.pop_size = int(config['pop_size'])
         if 'mutation_rate' in config:
             self.mutation_rate = float(config['mutation_rate'])
+            self.base_mutation_rate = float(config['mutation_rate'])
         if 'crossover_rate' in config:
             self.crossover_rate = float(config['crossover_rate'])
         if 'elitism_count' in config:

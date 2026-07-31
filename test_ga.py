@@ -118,7 +118,7 @@ class TestWirelessOptimizationGA(unittest.TestCase):
         self.assertAlmostEqual(ind.total_cost, expected_total_cost)
 
     def test_crossover(self):
-        """Verify crossover combines parents correctly."""
+        """Verify BLX-α crossover blends parents correctly."""
         ga = GeneticAlgorithm(devices=self.devices, pop_size=10)
         
         # Parents with easily distinguishable AP coordinates
@@ -129,11 +129,22 @@ class TestWirelessOptimizationGA(unittest.TestCase):
         ga.crossover_rate = 1.0
         child1, child2 = ga.crossover(parent1, parent2)
         
-        # The coordinates of children APs must all be either (10.0, 10.0) or (90.0, 90.0)
+        # BLX-α with α=0.3: range is [10 - 0.3*80, 90 + 0.3*80] = [-14, 114],
+        # clamped to grid [0, 100]. So children coords must be in [0, 100].
+        alpha = ga.blx_alpha
+        d = 80.0  # abs(90 - 10)
+        lo = max(0.0, 10.0 - alpha * d)
+        hi = min(ga.grid_size, 90.0 + alpha * d)
         for ap in child1.aps:
-            self.assertTrue(ap == (10.0, 10.0) or ap == (90.0, 90.0))
+            self.assertGreaterEqual(ap[0], lo)
+            self.assertLessEqual(ap[0], hi)
+            self.assertGreaterEqual(ap[1], lo)
+            self.assertLessEqual(ap[1], hi)
         for ap in child2.aps:
-            self.assertTrue(ap == (10.0, 10.0) or ap == (90.0, 90.0))
+            self.assertGreaterEqual(ap[0], lo)
+            self.assertLessEqual(ap[0], hi)
+            self.assertGreaterEqual(ap[1], lo)
+            self.assertLessEqual(ap[1], hi)
             
         # Verify crossover rate = 0.0 returns copies of parents
         ga.crossover_rate = 0.0
